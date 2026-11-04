@@ -238,7 +238,7 @@ ol, ul { margin: 0; padding: 0; list-style: none; }
 .facts div { display: flex; flex-direction: column; gap: 2px; }
 .facts dt { font-size: 12px; color: var(--muted); }
 .facts dd { margin: 0; }
-.progress { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.progress-box { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .bar span.done { background: var(--ok); }
