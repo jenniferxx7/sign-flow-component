@@ -1,0 +1,77 @@
+# 簽核流程設定元件
+
+設定表單簽核關卡的網頁元件，有三個畫面：
+
+- **設定畫面**：從 8 種簽核來源加入關卡，並設定每一關的簽核方式、期限和權限。8 種來源是指定員工、員工群組、部門成員、部門主管、組織層級、簽核角色、表單關係人、條件式。
+- **流程總覽**：按「儲存流程」後顯示。分成「簽核流程設定」（每一關由誰簽核）和「簽核狀態」（未簽核／簽核中／簽核完成三種情境）兩個區塊。
+- **完整簽核畫面**：單張表單的簽核進度。
+
+純 HTML / CSS / JavaScript，不需要安裝或建置工具。
+
+## 檔案結構
+
+```
+index.html            頁面入口
+css/style.css         樣式
+js/data-source.js     資料層：讀取組織資料、儲存流程（之後接 API 只改這裡）
+js/org-model.js       把組織資料轉成 8 種簽核來源，並算出動態簽核人
+js/app.js             畫面與互動
+data/org.js           組織資料（目前是範例資料）
+```
+
+`data/org.json` 已停用，可以直接刪除。
+
+## 在本機開啟
+
+直接用瀏覽器開啟 `index.html` 即可，不需要架伺服器。
+
+## 放上 GitHub 並分享網址
+
+1. 在 GitHub 建立一個 **私人（Private）** repo。
+2. 上傳這個資料夾裡的所有檔案。可以用 GitHub 網頁版拖曳上傳，也可以用 GitHub Desktop 或 git 指令。
+3. 發布成網站，**依資料是否敏感選擇方式**：
+   - **組織資料是真實員工資料**：不要用一般的 GitHub Pages，因為它是公開網站，任何人都看得到。請改用以下任一種：
+     - GitHub Enterprise Cloud 的私人 Pages：限定組織成員可以看。
+     - 公司內網的靜態網站主機：把整個資料夾放上去即可。
+   - **只放範例或去識別化資料**：可以用 GitHub Pages。到 repo 的 Settings → Pages，Source 選 `main` 分支的根目錄，存檔後會得到一個網址。
+
+## 更新組織資料
+
+修改 `data/org.js` 就好。檔案開頭是 `window.ORG_DATA = `，後面接一段 JSON。
+
+| 區塊 | 欄位 | 說明 |
+|---|---|---|
+| `grades` | 字串陣列 | 職級，由低到高排列，用於「申請人職等 以上（含）／以下（含）」條件 |
+| `departments` | `id`、`name`、`parentId`、`level`、`managerId` | 組織樹。`parentId` 為上層部門，最上層填 `null`；`level` 例如「部」「處」「公司」，「逐級簽核至處長」會用到 `處`；`managerId` 為部門主管的員編 |
+| `employees` | `id`、`name`、`deptId`、`title`、`grade`、`deputyId`（選填） | 員工。`deputyId` 為職務代理人的員編 |
+| `groups` | `id`、`name`、`memberIds` | 員工群組 |
+| `roles` | `id`、`name`、`deptId`（選填）、`memberIds` | 簽核角色，例如財務審核、法務審核 |
+| `form.name` | 字串 | 表單名稱 |
+| `form.fields` | `key`、`label`、`type`、`options`、`unit` | 可用於條件式的表單欄位。`type` 可為 `num`（數字）、`enum`（選項）、`rank`（職級）、`dept`（部門）、`text`（文字）、`person`（人員，作為表單關係人） |
+| `form.presetConditions` | `id`、`name`、`logic`、`clauses`、`then`、`otherwise` | 預設條件。`then` 是符合時的簽核人，格式為「來源:項目」，例如 `org:1`、`head:dept:FIN`、`role:fin` |
+| `sample` | `applicantId`、`submittedAt`、`values` | 預覽用的範例申請單，用來示範「依申請人動態帶入」和簽核進度畫面 |
+
+部門主管、直屬主管、逐級主管會依 `departments` 的上下層關係和 `managerId` 自動算出，不需要另外填。
+
+## 改成即時串接 HR 系統
+
+頁面只透過 `js/data-source.js` 取得資料。要接 API 時：
+
+1. 改寫 `loadOrg()`，改成向 API 取得資料，並回傳與 `data/org.js` 相同的格式。例如：
+   ```js
+   async function loadOrg() {
+     const res = await fetch('/api/org');
+     if (!res.ok) throw new Error('無法讀取組織資料');
+     return res.json();
+   }
+   ```
+2. 改寫 `saveFlow(flow)`，改成呼叫儲存流程的 API。目前只會在瀏覽器主控台輸出內容。
+3. 移除 `index.html` 裡的 `<script src="data/org.js"></script>`。
+
+員工人數很多時，建議 API 支援依關鍵字搜尋，並把搜尋改成由伺服器處理。目前畫面一次最多列出 100 筆。
+
+## 目前的限制
+
+- 「儲存流程」尚未接後端，重新整理頁面後設定會清空。
+- 「依申請人動態帶入」的人員和簽核進度畫面，都以 `sample` 指定的範例申請人示範。
+- 簽核進度畫面的核准時間是範例時間。
