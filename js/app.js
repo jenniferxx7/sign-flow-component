@@ -470,7 +470,7 @@
       + '<div><dt>申請金額</dt><dd>' + esc(amount) + '</dd></div>'
       + '<div><dt>送出時間</dt><dd>' + esc(M.sample.submittedAt || '—') + '</dd></div>'
       + '<div class="span-2"><dt>套用流程</dt><dd>第 ' + S.version + ' 版<span class="muted sm">（依送出當時的流程簽核，之後修改流程不影響此單）</span></dd></div></dl>'
-      + '<div class="progress"><div class="row spread"><span class="muted sm">簽核進度</span><strong>' + doneCount + ' / ' + n + ' 關</strong></div>'
+      + '<div class="progress-box"><div class="row spread"><span class="muted sm">簽核進度</span><strong>' + doneCount + ' / ' + n + ' 關</strong></div>'
       + '<div class="bar" role="progressbar" aria-label="簽核進度" aria-valuemin="0" aria-valuemax="' + n + '" aria-valuenow="' + doneCount + '"><span class="' + (allDone ? 'done' : '') + '" style="width:' + (n ? Math.round(doneCount / n * 100) : 0) + '%"></span></div>'
       + '<span class="muted sm">' + (allDone ? '全部關卡已完成' : current ? '目前在第 ' + (current.i + 1) + ' 關：' + esc(current.st.item.label) : '') + '</span></div></section>'
       + '<section class="card grow"><h2>簽核進度</h2><ol class="tl2">'
