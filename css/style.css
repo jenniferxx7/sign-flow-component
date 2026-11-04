@@ -267,6 +267,72 @@ ol, ul { margin: 0; padding: 0; list-style: none; }
 .signers li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .info { font-size: 12px; color: var(--accent-ink); }
 
+/* ---------- 拖曳排序 ---------- */
+.tl-step[draggable="true"] { cursor: grab; }
+.tl-step.dragging { opacity: .45; }
+.tl-step.drop-before .tl-card { box-shadow: 0 -3px 0 var(--accent); }
+.tl-step.drop-after .tl-card { box-shadow: 0 3px 0 var(--accent); }
+.grip { flex-shrink: 0; color: var(--faint); display: inline-flex; align-items: center; padding-top: 2px; cursor: grab; }
+
+/* ---------- 確認對話框 ---------- */
+.modal-wrap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { position: relative; width: 420px; max-width: 100%; background: var(--surface); border-radius: 14px; box-shadow: 0 16px 40px rgba(18,48,90,.25); padding: 24px; display: flex; flex-direction: column; gap: 10px; }
+.modal-icon { width: 44px; height: 44px; border-radius: 50%; background: #FDECEC; color: var(--danger); display: inline-flex; align-items: center; justify-content: center; }
+.modal p { color: var(--muted); line-height: 1.6; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+.btn-danger-solid { background: #B42318; color: #FFF; }
+
+/* ---------- 載入中、載入失敗、儲存失敗 ---------- */
+.note.error { display: inline-flex; align-items: center; gap: 6px; background: #FDECEC; color: var(--danger); font-weight: 500; }
+.spinner { width: 32px; height: 32px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+.spinner.sm { width: 16px; height: 16px; border-width: 2px; border-color: rgba(255,255,255,.4); border-top-color: #FFF; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.state-center { align-items: center; justify-content: center; text-align: center; min-height: 360px; }
+.skeleton { display: block; height: 14px; border-radius: 6px; background: var(--line); }
+.skeleton.dark { height: 44px; background: rgba(255,255,255,.08); }
+.skeleton.block { height: 180px; border-radius: var(--radius); }
+.state-page { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.state-card { width: 480px; max-width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.state-icon { width: 56px; height: 56px; border-radius: 50%; background: #FDECEC; color: var(--danger); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.state-card .btn { margin-top: 8px; }
+
+/* ---------- 流程版本 ---------- */
+.version-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--radius); background: var(--accent-bg); color: var(--accent-ink); font-size: 13px; line-height: 1.5; }
+.version-note svg { flex-shrink: 0; margin-top: 2px; }
+.version-note span { color: var(--ink); }
+.version-note.old { background: var(--warn-bg); color: var(--warn); align-items: center; flex-wrap: wrap; }
+.version-note.old span { flex: 1 1 260px; }
+.tag.old { background: var(--warn-bg); color: var(--warn); }
+.row-head { flex-direction: row; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ver-menu { position: relative; }
+.ver-trigger { width: 240px; height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); text-align: left; color: var(--muted); }
+.ver-trigger strong { color: var(--ink); font-size: 14px; }
+.ver-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ver-time { font-size: 11px; color: var(--muted); font-weight: 400; }
+.ver-scrim { position: fixed; inset: 0; z-index: 30; border: none; background: transparent; cursor: default; }
+.ver-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 31; width: 280px; max-height: 296px; overflow-y: auto; padding: 6px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 10px 28px rgba(18,48,90,.18); }
+.ver-item { width: 100%; height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: none; border-radius: 8px; background: transparent; text-align: left; }
+.ver-item:hover { background: var(--surface-2); }
+.ver-item.on { background: var(--accent-bg); }
+.ver-check { width: 16px; flex-shrink: 0; color: var(--accent-ink); display: inline-flex; }
+.ver-badge { width: 64px; flex-shrink: 0; text-align: center; font-size: 11px; font-weight: 500; padding: 3px 0; border-radius: 999px; }
+.ver-badge.cur { background: var(--ok-bg); color: var(--ok); }
+.ver-badge.old { background: #EEF1F5; color: var(--muted); }
+@media (max-width: 760px) { .ver-menu, .ver-trigger { width: 100%; } .ver-pop { left: 0; right: auto; width: 100%; } }
+.modal-icon.info { background: var(--accent-soft); color: var(--accent-ink); }
+.facts .span-2 { grid-column: 1 / -1; }
+.facts .span-2 dd .muted { display: block; margin-top: 2px; }
+
+/* ---------- 畫面示意選單 ---------- */
+.demo-menu { position: fixed; right: 16px; bottom: 16px; z-index: 50; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 6px 20px rgba(18,48,90,.15); font-size: 13px; }
+.demo-menu summary { min-height: 40px; display: flex; align-items: center; padding: 0 14px; cursor: pointer; font-weight: 500; color: var(--navy); }
+.demo-menu nav { display: flex; flex-direction: column; padding: 4px 6px 8px; border-top: 1px solid var(--line); }
+.demo-menu a { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+.demo-menu a span { font-size: 11px; color: var(--muted); }
+.demo-menu a:hover { background: var(--surface-2); }
+.demo-menu a[aria-current="page"] { background: var(--accent-bg); color: var(--accent-ink); font-weight: 500; }
+
 @media (max-width: 760px) {
   .navlist { flex-direction: row; flex-wrap: wrap; }
   .topbar, .container, .panel { padding-left: 16px; padding-right: 16px; }
