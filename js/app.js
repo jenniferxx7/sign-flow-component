@@ -25,6 +25,9 @@
     chev: '<path d="M9 6l6 6-6 6"></path>',
     back: '<path d="M15 6l-6 6 6 6"></path>',
     up: '<path d="M6 15l6-6 6 6"></path>',
+    down: '<path d="M6 9l6 6 6-6"></path>',
+    grip: '<circle cx="9" cy="6" r="1" fill="currentColor"></circle><circle cx="15" cy="6" r="1" fill="currentColor"></circle><circle cx="9" cy="12" r="1" fill="currentColor"></circle><circle cx="15" cy="12" r="1" fill="currentColor"></circle><circle cx="9" cy="18" r="1" fill="currentColor"></circle><circle cx="15" cy="18" r="1" fill="currentColor"></circle>',
+    alert: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v5.5"></path><path d="M12 16.5v.5"></path>',
     trash: '<path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M6 7l1 13h10l1-13"></path>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"></path>',
     check: '<path d="M5 12l5 5 9-10"></path>',
@@ -43,8 +46,12 @@
   const S = {
     tab: 'emp', q: '', view: null, editor: null, tried: false,
     custom: [], picked: [], settings: {},
-    screen: 'edit', preview: 'pending', saved: false
+    screen: 'edit', preview: 'pending', saved: false,
+    confirm: null, saving: false, saveError: '',
+    version: 0, snapshot: null, prevVersion: 0,
+    history: [], viewVersion: null, verOpen: false
   };
+  let dragFrom = null;
   function set(patch) { Object.assign(S, patch); render(); }
 
   /* ---------- 資料查詢 ---------- */
@@ -100,6 +107,9 @@
     const s = getSet(key);
     return MODE_TEXT[s.mode] + '｜' + (s.timeout === 'none' ? '不限期限' : s.timeout + ' 小時內');
   }
+  // 流程版本：已在簽核中的單據沿用送出當時的版本，儲存修改後的流程會成為新版本
+  const flowSig = () => JSON.stringify({ steps: S.picked.map((k) => [k, getSet(k)]), custom: S.custom.filter((u) => S.picked.includes('cond:' + u.id)) });
+  const isDirty = () => S.version > 0 && flowSig() !== S.snapshot;
   const pickedSteps = () => S.picked.map((key) => Object.assign({ key }, find(key))).filter((x) => x.item);
   const condNote = (r) => r.clauses.map((c) => [c.f, c.op, c.v].filter(Boolean).join(' ')).join(r.logic === 'and' ? ' 且 ' : ' 或 ');
   const initial = (name) => esc(String(name).replace(/^欄位「/, '').charAt(0));
@@ -148,20 +158,25 @@
         + '<div class="empty-quick"><span class="quick-title">或快速加入常用關卡</span><div class="chips">' + quick + '</div></div></div>'
       : '<ol class="timeline">'
         + '<li class="tl-edge">' + '<span class="tl-dot">' + svg(ICON.dot, 12) + '</span><span class="muted">申請人送出表單</span></li>'
-        + steps.map((st, i) => '<li class="tl-step"><div class="tl-rail"><span class="tl-num">' + (i + 1) + '</span><span class="tl-line"></span></div>'
+        + steps.map((st, i) => '<li class="tl-step" draggable="true" data-drag-index="' + i + '"><div class="tl-rail"><span class="tl-num">' + (i + 1) + '</span><span class="tl-line"></span></div>'
           + '<div class="tl-card' + (S.view === st.key ? ' on' : '') + '">'
+          + '<span class="grip" title="拖曳調整順序" aria-hidden="true">' + svg(ICON.grip, 16) + '</span>'
           + '<button class="tl-open" data-act="open" data-arg="' + esc(st.key) + '" aria-label="查看第 ' + (i + 1) + ' 關設定">' + tag(st.cat.name)
           + '<span class="tl-label">' + esc(st.item.label) + '</span><span class="tl-sum">' + esc(summary(st.key)) + '</span></button>'
-          + '<div class="tl-tools">' + iconBtn('up', i, '上移', 'up', i === 0) + iconBtn('remove', st.key, '移除', 'close') + '</div>'
+          + '<div class="tl-tools">' + iconBtn('up', i, '上移第 ' + (i + 1) + ' 關', 'up', i === 0) + iconBtn('down', i, '下移第 ' + (i + 1) + ' 關', 'down', i === steps.length - 1)
+          + iconBtn('remove', st.key, '移除第 ' + (i + 1) + ' 關', 'close') + '</div>'
           + '</div></li>').join('')
         + '<li class="tl-edge"><span class="tl-dot done">' + svg(ICON.check, 16, { sw: 2.4 }) + '</span><span class="muted">簽核完成，結案歸檔</span></li></ol>';
 
-    return '<header class="topbar"><div class="titles"><span class="crumb">表單管理 / ' + esc(M.formName) + '</span><h1>設定簽核關卡</h1></div>'
+    return '<header class="topbar"><div class="titles"><span class="crumb">表單管理 / ' + esc(M.formName) + '</span>'
+      + '<div class="row wrap"><h1>設定簽核關卡</h1>' + (S.version ? '<span class="tag">目前生效：第 ' + S.version + ' 版</span>' : '') + '</div></div>'
       + '<div class="topbar-actions">'
-      + (S.saved ? '<span class="note ok" role="status">已儲存，共 ' + steps.length + ' 關</span>' : '')
+      + (S.saved && !S.saveError ? '<span class="note ok" role="status">已儲存，共 ' + steps.length + ' 關</span>' : '')
       + (empty ? '<span class="note warn" role="status">請至少加入一個簽核關卡才能儲存</span>' : '')
-      + '<button class="btn btn-ghost" data-act="clear"' + (empty ? ' disabled' : '') + '>清除全部</button>'
-      + '<button class="btn btn-primary" data-act="save"' + (empty ? ' disabled' : '') + '>儲存流程</button></div></header>'
+      + (S.saveError && !empty ? '<span class="note error" role="alert">' + svg(ICON.alert, 16, { sw: 2 }) + '儲存失敗：' + esc(S.saveError) + '</span>' : '')
+      + '<button class="btn btn-ghost" data-act="clear"' + (empty || S.saving ? ' disabled' : '') + '>清除全部</button>'
+      + '<button class="btn btn-primary" data-act="save"' + (empty || S.saving ? ' disabled' : '') + (S.saving ? ' aria-busy="true"' : '') + '>'
+      + (S.saving ? '<span class="spinner sm" aria-hidden="true"></span>儲存中…' : (S.saveError ? '重新儲存' : '儲存流程')) + '</button></div></header>'
       + '<div class="layout"><nav class="nav" aria-label="簽核來源"><div class="navlist">' + nav + '</div></nav>'
       + '<div class="main">'
       + '<section class="panel"><div class="panel-head"><h2>' + esc(cur.name) + '</h2><p class="muted">' + esc(cur.desc) + '</p></div>'
@@ -169,10 +184,49 @@
       + (S.tab === 'cond' ? '<button class="add-cond" data-act="newCond">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增自訂條件</span></button>' : '')
       + '<div class="opt-list">' + rows + '</div></section>'
       + '<aside class="flow" aria-label="簽核流程"><div class="flow-head"><h2>簽核流程</h2>'
-      + (empty ? '' : '<span class="muted">共 ' + steps.length + ' 關｜點選關卡查看設定</span>') + '</div>' + flow + '</aside>'
+      + (empty ? '' : '<span class="muted">共 ' + steps.length + ' 關｜點選關卡查看設定</span>') + '</div>'
+      + (isDirty() ? '<div class="version-note" role="status">' + svg(ICON.swap, 16, { sw: 2 }) + '<span>流程已修改，儲存後會成為<strong>第 ' + (S.version + 1) + ' 版</strong>。'
+        + (M.sample.inProgressCount ? '簽核中的 ' + M.sample.inProgressCount + ' 張' + esc(M.formName) + '仍依第 ' + S.version + ' 版完成。' : '') + '</span></div>' : '')
+      + flow + '</aside>'
       + '</div></div>'
       + (S.view ? renderDrawer() : '')
-      + (S.editor ? renderEditor() : '');
+      + (S.editor ? renderEditor() : '')
+      + (S.confirm ? renderConfirm() : '');
+  }
+
+  /* ---------- 確認對話框 ---------- */
+  function renderConfirm() {
+    const c = S.confirm;
+    const info = c.tone === 'info';
+    return '<div class="modal-wrap"><button class="scrim" data-act="confirmCancel" aria-label="取消"></button>'
+      + '<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="cf-title" aria-describedby="cf-desc">'
+      + '<div class="modal-icon' + (info ? ' info' : '') + '">' + svg(info ? ICON.swap : ICON.alert, 22, { sw: 2 }) + '</div>'
+      + '<h2 id="cf-title">' + esc(c.title) + '</h2><p id="cf-desc">' + esc(c.message) + '</p>'
+      + '<div class="modal-foot"><button class="btn btn-outline" data-act="confirmCancel" data-key="cf-cancel">取消</button>'
+      + '<button class="btn ' + (info ? 'btn-primary' : 'btn-danger-solid') + '" data-act="confirmOk">' + esc(c.ok) + '</button></div></div></div>';
+  }
+  function ask(c) { set({ confirm: c }); }
+  function askRemove(key, closeView) {
+    const hit = find(key);
+    const n = S.picked.indexOf(key) + 1;
+    ask({ title: '移除第 ' + n + ' 關？', message: '「' + (hit ? hit.item.label : '') + '」和它的簽核設定會從流程中移除。', ok: '移除', act: 'remove', arg: key, closeView });
+  }
+
+  /* ---------- 載入中、載入失敗 ---------- */
+  function renderLoading() {
+    const bar = (w) => '<span class="skeleton" style="width:' + w + '"></span>';
+    return '<header class="topbar"><div class="titles">' + bar('120px') + bar('180px') + '</div></header>'
+      + '<div class="layout"><nav class="nav" aria-hidden="true"><div class="navlist">' + Array(8).fill('<span class="skeleton dark"></span>').join('') + '</div></nav>'
+      + '<div class="main"><section class="panel state-center" role="status" aria-live="polite">'
+      + '<span class="spinner" aria-hidden="true"></span><strong>正在載入組織資料…</strong><span class="muted sm">員工、部門與簽核角色載入後即可開始設定</span></section>'
+      + '<aside class="flow" aria-hidden="true">' + bar('80px') + '<span class="skeleton block"></span></aside></div></div>';
+  }
+  function renderLoadError(message) {
+    return '<div class="state-page"><div class="state-card" role="alert">'
+      + '<span class="state-icon">' + svg(ICON.alert, 28, { sw: 2 }) + '</span>'
+      + '<h1>無法載入組織資料</h1><p>' + esc(message) + '</p>'
+      + '<p class="muted sm">請確認網路連線後重新載入；若持續發生，請聯絡系統管理員。</p>'
+      + '<button class="btn btn-primary" data-act="reload">重新載入</button></div></div>';
   }
 
   /* ---------- 關卡詳細面板 ---------- */
@@ -292,16 +346,41 @@
     const cur = Math.min(1, n - 1);
     const hint = { pending: '表單送出後，等待第 1 關簽核', progress: n > 1 ? '已完成前 ' + cur + ' 關，第 ' + (cur + 1) + ' 關簽核中' : '第 1 關簽核中', done: '所有關卡皆已核准，簽核完成' }[sc];
 
-    const setupRows = steps.map((st, i) => {
-      const it = st.item;
-      const chips = it.example
+    // 簽核流程設定：預設顯示目前版本，可切換查看舊版本（唯讀）
+    const current = S.history.find((h) => h.version === S.version);
+    const viewing = S.history.find((h) => h.version === S.viewVersion) || current;
+    const isOld = viewing && viewing.version !== S.version;
+    const newer = isOld ? S.history.find((h) => h.version === viewing.version + 1) : null;
+    const setupRows = (viewing ? viewing.rows : snapshotRows(steps)).map((r) => {
+      const chips = r.dynamic
         ? '<span class="dyn-chip">' + svg(ICON.swap, 14, { sw: 2 }) + '依申請人動態帶入</span>'
-        : it.people.slice(0, 3).map((m) => '<span class="person-chip"><span class="avatar xs">' + initial(m.name) + '</span><span class="pc-name">' + esc(m.name) + '</span><span class="opt-sub">' + esc(m.title) + '</span></span>').join('')
-          + (it.people.length > 3 ? '<span class="muted sm">另 ' + (it.people.length - 3) + ' 人</span>' : '');
-      return '<li class="setup-row"><div class="setup-step"><span class="num-badge">' + (i + 1) + '</span><div class="titles"><strong>' + esc(it.label) + '</strong><div class="row">' + tag(st.cat.name) + '<span class="muted sm">' + esc(it.sub) + '</span></div></div></div>'
+        : r.people.map((m) => '<span class="person-chip"><span class="avatar xs">' + initial(m.name) + '</span><span class="pc-name">' + esc(m.name) + '</span><span class="opt-sub">' + esc(m.title) + '</span></span>').join('')
+          + (r.more ? '<span class="muted sm">另 ' + r.more + ' 人</span>' : '');
+      return '<li class="setup-row"><div class="setup-step"><span class="num-badge">' + r.num + '</span><div class="titles"><strong>' + esc(r.label) + '</strong><div class="row">' + tag(r.type) + '<span class="muted sm">' + esc(r.sub) + '</span></div></div></div>'
         + '<div class="setup-col wide"><span class="muted sm">簽核人</span><div class="chips">' + chips + '</div></div>'
-        + '<div class="setup-col"><span class="muted sm">簽核方式</span><span>' + esc(summary(st.key)) + '</span>' + (it.rule ? '<span class="cond-note">當 ' + esc(condNote(it.rule)) + ' 時簽核</span>' : '') + '</div></li>';
+        + '<div class="setup-col"><span class="muted sm">簽核方式</span><span>' + esc(r.summary) + '</span>' + (r.cond ? '<span class="cond-note">當 ' + esc(r.cond) + ' 時簽核</span>' : '') + '</div></li>';
     }).join('');
+    const versionItems = S.history.slice().reverse().map((h) => {
+      const on = viewing && h.version === viewing.version;
+      const cur = h.version === S.version;
+      return '<li><button class="ver-item' + (on ? ' on' : '') + '" role="option" aria-selected="' + !!on + '" data-act="viewVersion" data-arg="' + h.version + '">'
+        + '<span class="ver-check" aria-hidden="true">' + (on ? svg(ICON.check, 16, { sw: 2.4 }) : '') + '</span>'
+        + '<span class="ver-main"><strong>第 ' + h.version + ' 版</strong><span class="ver-time">' + esc(h.savedAt) + ' 更新</span></span>'
+        + '<span class="ver-badge ' + (cur ? 'cur' : 'old') + '">' + (cur ? '目前生效' : '已失效') + '</span></button></li>';
+    }).join('');
+    const versionMenu = '<div class="ver-menu">'
+      + '<button class="ver-trigger" data-act="toggleVer" aria-haspopup="listbox" aria-expanded="' + !!S.verOpen + '">'
+      + '<span class="ver-main"><span class="ver-time">查看版本</span><strong>第 ' + (viewing ? viewing.version : '') + ' 版' + (isOld ? '（已失效）' : '（目前生效）') + '</strong></span>'
+      + svg(ICON.down, 16, { sw: 2 }) + '</button>'
+      + (S.verOpen ? '<button class="ver-scrim" data-act="toggleVer" aria-label="關閉版本選單" tabindex="-1"></button><ul class="ver-pop" role="listbox" aria-label="選擇版本">' + versionItems + '</ul>' : '')
+      + '</div>';
+    const setupHead = '<div class="card-head row-head"><div class="titles"><div class="row wrap"><h2>簽核流程設定</h2>'
+      + (viewing ? '<span class="tag' + (isOld ? ' old' : '') + '">第 ' + viewing.version + ' 版' + (isOld ? '（舊版本）' : '・目前生效') + '</span>' : '') + '</div>'
+      + '<span class="muted">表單送出後，依序由以下人員簽核</span></div>'
+      + (S.history.length > 1 ? versionMenu : '') + '</div>'
+      + (isOld ? '<div class="version-note old" role="status">' + svg(ICON.alert, 16, { sw: 2 }) + '<span>你正在查看<strong>第 ' + viewing.version + ' 版</strong>（' + esc(viewing.savedAt) + ' 更新'
+        + (newer ? '，' + esc(newer.savedAt) + ' 起失效，改用第 ' + newer.version + ' 版' : '') + '）。新送出的' + esc(M.formName) + '不會再使用此版本；送出時套用此版本、仍在簽核中的表單會依此版本完成。'
+        + '</span><button class="btn btn-link sm" data-act="viewVersion" data-arg="' + S.version + '">回到目前版本</button></div>' : '');
 
     const line = (solid, done) => '<span class="st-line' + (solid ? '' : ' dashed') + (done ? ' done' : '') + '"></span>';
     const stepper = '<div class="stepper-wrap"><ol class="stepper">'
@@ -322,9 +401,12 @@
     return '<header class="topbar"><div class="titles"><span class="crumb">表單管理 / ' + esc(M.formName) + '</span><h1>簽核流程總覽</h1></div>'
       + '<button class="btn btn-outline" data-act="back">' + svg(ICON.pencil, 16, { sw: 2 }) + '<span>返回編輯</span></button></header>'
       + '<main class="container">'
-      + '<div class="banner ok" role="status"><span class="banner-icon">' + svg(ICON.check, 20, { sw: 2.6 }) + '</span><div class="titles"><strong>簽核流程已儲存</strong><span>共 ' + n + ' 關，將套用於之後送出的' + esc(M.formName) + '</span></div></div>'
+      + '<div class="banner ok" role="status"><span class="banner-icon">' + svg(ICON.check, 20, { sw: 2.6 }) + '</span><div class="titles">'
+      + '<strong>簽核流程已儲存為第 ' + S.version + ' 版</strong>'
+      + '<span>共 ' + n + ' 關，將套用於之後送出的' + esc(M.formName) + '。'
+      + (S.prevVersion && M.sample.inProgressCount ? '已在簽核中的 ' + M.sample.inProgressCount + ' 張仍依第 ' + S.prevVersion + ' 版流程完成。' : '') + '</span></div></div>'
       + '<div class="stats"><div class="stat"><span class="muted sm">簽核關卡</span><strong>' + n + ' 關</strong></div><div class="stat"><span class="muted sm">條件式關卡</span><strong>' + condCount + ' 關</strong></div><div class="stat"><span class="muted sm">最長簽核時間</span><strong>' + (unlimited ? '不限' : hours + ' 小時') + '</strong></div></div>'
-      + '<section class="card"><div class="card-head"><h2>簽核流程設定</h2><span class="muted">表單送出後，依序由以下人員簽核</span></div><ol class="setup-list">' + setupRows + '</ol></section>'
+      + '<section class="card" aria-label="簽核流程設定">' + setupHead + '<ol class="setup-list">' + setupRows + '</ol></section>'
       + '<section class="card"><div class="card-head"><h2>簽核狀態</h2><span class="muted">切換情境，查看表單送出後各關卡的簽核進度</span></div>'
       + '<div class="tabs-big" role="group" aria-label="簽核情境">' + SCENARIOS.map((o) => '<button class="tab-big' + (o.v === sc ? ' on' : '') + '" data-act="preview" data-arg="' + o.v + '" aria-pressed="' + (o.v === sc) + '"><span class="tab-dot ' + o.v + '"></span><span class="titles"><strong>' + o.t + '</strong><span class="muted sm">' + o.d + '</span></span></button>').join('') + '</div>'
       + '<div class="banner ' + sc + '"><div class="row wrap"><strong>' + esc(hint) + '</strong><span class="muted">已完成 ' + doneCount + ' / ' + n + ' 關</span></div>'
@@ -386,7 +468,8 @@
       + '<div><dt>申請人</dt><dd>' + esc(app.name) + '（' + esc(app.title) + '）</dd></div>'
       + '<div><dt>費用類別</dt><dd>' + esc(v.category || '—') + '</dd></div>'
       + '<div><dt>申請金額</dt><dd>' + esc(amount) + '</dd></div>'
-      + '<div><dt>送出時間</dt><dd>' + esc(M.sample.submittedAt || '—') + '</dd></div></dl>'
+      + '<div><dt>送出時間</dt><dd>' + esc(M.sample.submittedAt || '—') + '</dd></div>'
+      + '<div class="span-2"><dt>套用流程</dt><dd>第 ' + S.version + ' 版<span class="muted sm">（依送出當時的流程簽核，之後修改流程不影響此單）</span></dd></div></dl>'
       + '<div class="progress"><div class="row spread"><span class="muted sm">簽核進度</span><strong>' + doneCount + ' / ' + n + ' 關</strong></div>'
       + '<div class="bar" role="progressbar" aria-label="簽核進度" aria-valuemin="0" aria-valuemax="' + n + '" aria-valuenow="' + doneCount + '"><span class="' + (allDone ? 'done' : '') + '" style="width:' + (n ? Math.round(doneCount / n * 100) : 0) + '%"></span></div>'
       + '<span class="muted sm">' + (allDone ? '全部關卡已完成' : current ? '目前在第 ' + (current.i + 1) + ' 關：' + esc(current.st.item.label) : '') + '</span></div></section>'
@@ -410,6 +493,11 @@
       const el = $app.querySelector('[data-key="' + key + '"]');
       if (el) { el.focus(); try { if (sel) el.setSelectionRange(sel[0], sel[1]); } catch (e) { /* number 欄位不支援 */ } }
     }
+    // 確認對話框開啟時，焦點預設放在「取消」，避免誤按 Enter 直接刪除
+    if (S.confirm && !(document.activeElement && document.activeElement.closest('.modal'))) {
+      const cancel = $app.querySelector('[data-key="cf-cancel"]');
+      if (cancel) cancel.focus();
+    }
   }
 
   /* ---------- 自訂條件操作 ---------- */
@@ -423,6 +511,53 @@
     clauses[i] = Object.assign({}, clauses[i], p);
     patchEd({ clauses });
   }
+  // 更新時間到秒；與上一版同一秒時往後推 1 秒，確保每一版的時間不同
+  function stampAfter(last) {
+    let ts = Date.now();
+    if (last && ts - last.ts < 1000) ts = last.ts + 1000;
+    const d = new Date(ts);
+    const p = (x) => String(x).padStart(2, '0');
+    return { ts, text: d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) };
+  }
+
+  // 儲存當下的流程內容（之後組織或設定變動也不影響舊版本的紀錄）
+  function snapshotRows(steps) {
+    return steps.map((st, i) => {
+      const it = st.item;
+      return {
+        num: i + 1, label: it.label, type: st.cat.name, sub: it.sub, dynamic: !!it.example,
+        people: it.people.slice(0, 3).map((m) => ({ name: m.name, title: m.title })),
+        more: Math.max(0, it.people.length - 3),
+        summary: summary(st.key),
+        cond: it.rule ? condNote(it.rule) : ''
+      };
+    });
+  }
+
+  async function doSave() {
+    const dirty = isDirty();
+    const nextVersion = S.version === 0 ? 1 : (dirty ? S.version + 1 : S.version);
+    set({ saving: true, saveError: '' });
+    const flow = pickedSteps().map((st) => ({ source: st.key, label: st.item.label, settings: getSet(st.key) }));
+    let res;
+    try { res = await window.DataSource.saveFlow({ form: M.formName, version: nextVersion, steps: flow, customConditions: S.custom }); } catch (e) { res = { ok: false, message: e.message }; }
+    if (res && res.ok) {
+      const prev = S.history.filter((h) => h.version !== nextVersion).slice(-1)[0];
+      const stamp = stampAfter(prev);
+      const entry = { version: nextVersion, ts: stamp.ts, savedAt: stamp.text, rows: snapshotRows(pickedSteps()) };
+      const history = nextVersion === S.version ? S.history.map((h) => (h.version === nextVersion ? entry : h)) : S.history.concat(entry);
+      set({ saving: false, saved: true, screen: 'done', view: null, editor: null, prevVersion: dirty ? S.version : 0, version: nextVersion, snapshot: flowSig(), history, viewVersion: null });
+    } else set({ saving: false, saveError: (res && res.message) || '請稍後再試。' });
+  }
+
+  function moveStep(from, to) {
+    if (from === to || to < 0 || to >= S.picked.length) return;
+    const p = S.picked.slice();
+    const [k] = p.splice(from, 1);
+    p.splice(to, 0, k);
+    set({ picked: p, saved: false });
+  }
+
   function saveEditor() {
     const ed = S.editor;
     if (!edValid(ed)) { set({ tried: true }); return; }
@@ -439,17 +574,41 @@
   const ACT = {
     tab: (k) => set({ tab: k, q: '' }),
     open: (key) => set({ view: key }),
-    toggle: (key) => togglePick(key),
+    toggle: (key) => (S.picked.includes(key) ? askRemove(key) : togglePick(key)),
     closeView: () => set({ view: null }),
-    pickAndClose: () => { const k = S.view; S.view = null; togglePick(k); },
-    up: (i) => { i = Number(i); if (!i) return; const p = S.picked.slice(); [p[i - 1], p[i]] = [p[i], p[i - 1]]; set({ picked: p, saved: false }); },
-    remove: (key) => togglePick(key),
-    clear: () => set({ picked: [], view: null, saved: false }),
-    save: async () => {
-      if (!S.picked.length) return;
-      const flow = pickedSteps().map((st) => ({ source: st.key, label: st.item.label, settings: getSet(st.key) }));
-      const res = await window.DataSource.saveFlow({ form: M.formName, steps: flow, customConditions: S.custom });
-      if (res && res.ok) set({ saved: true, screen: 'done', view: null, editor: null });
+    pickAndClose: () => {
+      const k = S.view;
+      if (S.picked.includes(k)) askRemove(k, true);
+      else { S.view = null; togglePick(k); }
+    },
+    up: (i) => moveStep(Number(i), Number(i) - 1),
+    down: (i) => moveStep(Number(i), Number(i) + 1),
+    remove: (key) => askRemove(key),
+    clear: () => ask({ title: '清除全部關卡？', message: '目前的 ' + S.picked.length + ' 個關卡和它們的簽核設定都會移除，無法復原。', ok: '清除全部', act: 'clear' }),
+    confirmCancel: () => set({ confirm: null }),
+    confirmOk: () => {
+      const c = S.confirm;
+      S.confirm = null;
+      if (c.act === 'remove') set({ picked: S.picked.filter((k) => k !== c.arg), view: c.closeView ? null : S.view, saved: false });
+      else if (c.act === 'clear') set({ picked: [], view: null, saved: false });
+      else if (c.act === 'delCond') {
+        const key = 'cond:' + c.arg;
+        set({ custom: S.custom.filter((u) => u.id !== c.arg), picked: S.picked.filter((k) => k !== key), view: S.view === key ? null : S.view, editor: null, saved: false });
+      } else if (c.act === 'save') { render(); doSave(); }
+      else render();
+    },
+    reload: () => window.location.reload(),
+    save: () => {
+      if (!S.picked.length || S.saving) return;
+      if (isDirty()) {
+        const n = M.sample.inProgressCount;
+        ask({
+          tone: 'info', title: '儲存為第 ' + (S.version + 1) + ' 版流程？',
+          message: (n ? '目前有 ' + n + ' 張' + M.formName + '正在簽核，會繼續依第 ' + S.version + ' 版流程完成；' : '')
+            + '儲存後新送出的' + M.formName + '才會套用第 ' + (S.version + 1) + ' 版流程。',
+          ok: '儲存為第 ' + (S.version + 1) + ' 版', act: 'save'
+        });
+      } else doSave();
     },
     back: () => set({ screen: 'edit' }),
     mode: (v) => setSet(S.view, { mode: v }),
@@ -463,11 +622,10 @@
     edRemove: (i) => patchEd({ clauses: S.editor.clauses.filter((_, j) => j !== Number(i)) }),
     edCancel: () => set({ editor: null }),
     edSave: () => saveEditor(),
-    edDelete: () => {
-      const id = S.editor.id; const key = 'cond:' + id;
-      set({ custom: S.custom.filter((u) => u.id !== id), picked: S.picked.filter((k) => k !== key), view: S.view === key ? null : S.view, editor: null, saved: false });
-    },
+    edDelete: () => ask({ title: '刪除這個自訂條件？', message: '「' + (S.editor.name || '未命名條件') + '」會被刪除；若已加入流程，該關卡也會一併移除。', ok: '刪除', act: 'delCond', arg: S.editor.id }),
     preview: (v) => set({ preview: v }),
+    viewVersion: (v) => set({ viewVersion: Number(v), verOpen: false }),
+    toggleVer: () => set({ verOpen: !S.verOpen }),
     openStatus: () => set({ screen: 'status' }),
     toOverview: () => set({ screen: 'done' })
   };
@@ -501,16 +659,48 @@
     if (fn) fn(el);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (S.editor) set({ editor: null });
+    if (e.key !== 'Escape' || !M) return;
+    if (S.verOpen) set({ verOpen: false });
+    else if (S.confirm) set({ confirm: null });
+    else if (S.editor) set({ editor: null });
     else if (S.view) set({ view: null });
   });
 
+  /* 拖曳排序（鍵盤使用者可用上移、下移按鈕） */
+  const clearDrop = () => $app.querySelectorAll('.drop-before, .drop-after, .dragging').forEach((n) => n.classList.remove('drop-before', 'drop-after', 'dragging'));
+  const dropPos = (li, e) => { const r = li.getBoundingClientRect(); return e.clientY > r.top + r.height / 2 ? 'after' : 'before'; };
+  $app.addEventListener('dragstart', (e) => {
+    const li = e.target.closest && e.target.closest('[data-drag-index]');
+    if (!li) return;
+    dragFrom = Number(li.dataset.dragIndex);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragFrom));
+    li.classList.add('dragging');
+  });
+  $app.addEventListener('dragover', (e) => {
+    const li = e.target.closest && e.target.closest('[data-drag-index]');
+    if (!li || dragFrom === null) return;
+    e.preventDefault();
+    const pos = dropPos(li, e);
+    $app.querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
+    li.classList.add(pos === 'after' ? 'drop-after' : 'drop-before');
+  });
+  $app.addEventListener('drop', (e) => {
+    const li = e.target.closest && e.target.closest('[data-drag-index]');
+    if (!li || dragFrom === null) return;
+    e.preventDefault();
+    let to = Number(li.dataset.dragIndex) + (dropPos(li, e) === 'after' ? 1 : 0);
+    if (to > dragFrom) to -= 1;
+    const from = dragFrom;
+    dragFrom = null;
+    clearDrop();
+    moveStep(from, to);
+  });
+  $app.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
+
   /* ---------- 啟動 ---------- */
+  $app.innerHTML = renderLoading();
   window.DataSource.loadOrg()
     .then((raw) => { M = window.OrgModel.build(raw); render(); })
-    .catch((err) => {
-      $app.innerHTML = '<div class="load-error" role="alert"><h1>無法載入組織資料</h1><p>' + esc(err.message) + '</p>'
-        + '<p class="muted">請確認 data/org.js 的內容格式正確（說明見 README.md）。</p></div>';
-    });
+    .catch((err) => { $app.innerHTML = renderLoadError(err.message); });
 })();
