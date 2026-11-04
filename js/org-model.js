@@ -110,14 +110,30 @@
       }
     };
 
+    // 預設條件只保留「用到的欄位都在表單上、簽核人也找得到」的項目，避免條件和表單對不起來
+    const condFields = new Set(fields.filter((f) => f.type !== 'person').map((f) => f.key));
+    const hasApprover = (key) => {
+      const i = key.indexOf(':');
+      const cat = categories[key.slice(0, i)];
+      return !!(cat && cat.items.some((it) => it.id === key.slice(i + 1)));
+    };
+    const presets = (raw.form.presetConditions || []).filter((p) => {
+      const missing = p.clauses.map((c) => c.field).filter((k) => !condFields.has(k));
+      if (missing.length || !hasApprover(p.then)) {
+        console.warn('[OrgModel] 略過預設條件「' + p.name + '」：' + (missing.length ? '表單沒有欄位 ' + missing.join('、') : '找不到簽核人 ' + p.then));
+        return false;
+      }
+      return true;
+    });
+
     return {
       raw,
       formName: raw.form.name,
       fields: fields.filter((f) => f.type !== 'person'),
-      presets: raw.form.presetConditions || [],
+      presets,
       categories,
       applicant: person(applicant.id),
-      sample: { submittedAt: sample.submittedAt || '', values: sampleValues }
+      sample: { submittedAt: sample.submittedAt || '', values: sampleValues, inProgressCount: Number(sample.inProgressCount) || 0 }
     };
   }
 
