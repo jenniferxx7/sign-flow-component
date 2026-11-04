@@ -12,6 +12,16 @@
 <div id="app" class="app">
   <p class="loading">正在載入組織資料…</p>
 </div>
+<details class="demo-menu">
+  <summary>畫面示意</summary>
+  <nav aria-label="畫面示意">
+    <a href="./" data-demo="">正常畫面</a>
+    <a href="?demo=loading" data-demo="loading">載入中</a>
+    <a href="?demo=load-error" data-demo="load-error">載入失敗</a>
+    <a href="?demo=save-error" data-demo="save-error">儲存失敗<span>加入關卡後按「儲存流程」</span></a>
+  </nav>
+</details>
+<script src="js/demo-menu.js"></script>
 <noscript>此頁面需要啟用 JavaScript。</noscript>
 <script src="data/org.js"></script>
 <script src="js/data-source.js"></script>
