@@ -66,7 +66,6 @@ window.ORG_DATA = {
       { "key": "category", "label": "費用類別", "type": "enum", "options": ["差旅", "交際", "採購", "訓練", "其他"] },
       { "key": "grade", "label": "申請人職等", "type": "rank" },
       { "key": "dept", "label": "申請人部門", "type": "dept" },
-      { "key": "cross", "label": "是否跨部門", "type": "enum", "options": ["是", "否"] },
       { "key": "project", "label": "專案代碼", "type": "text" },
       { "key": "projectOwner", "label": "專案負責人", "type": "person" },
       { "key": "costOwner", "label": "成本中心主管", "type": "person" }
@@ -74,13 +73,15 @@ window.ORG_DATA = {
     "presetConditions": [
       { "id": "c1", "name": "金額超過 50,000", "logic": "and", "clauses": [{ "field": "amount", "op": ">", "value": "50000" }], "then": "head:dept:FIN", "otherwise": "skip" },
       { "id": "c2", "name": "職等協理以上", "logic": "and", "clauses": [{ "field": "grade", "op": "以上（含）", "value": "協理" }], "then": "org:to-top", "otherwise": "skip" },
-      { "id": "c3", "name": "跨部門專案", "logic": "and", "clauses": [{ "field": "cross", "op": "等於", "value": "是" }], "then": "rel:field:projectOwner", "otherwise": "skip" }
+      { "id": "c3", "name": "交際費用", "logic": "and", "clauses": [{ "field": "category", "op": "等於", "value": "交際" }], "then": "head:parent", "otherwise": "skip" },
+      { "id": "c4", "name": "專案費用", "logic": "and", "clauses": [{ "field": "project", "op": "不為空" }], "then": "rel:field:projectOwner", "otherwise": "skip" }
     ]
   },
   "sample": {
     "note": "預覽用的範例申請單，用來示範「依申請人動態帶入」與簽核狀態畫面。",
     "applicantId": "E10388",
     "submittedAt": "11/03 09:20",
-    "values": { "amount": 45000, "category": "差旅", "cross": "否", "projectOwner": "E10301", "costOwner": "E00010" }
+    "inProgressCount": 3,
+    "values": { "amount": 45000, "category": "差旅", "project": "", "projectOwner": "E10301", "costOwner": "E00010" }
   }
 };
