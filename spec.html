@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>簽核流程設定｜功能規格</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/spec.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-title">簽核流程設定<span>功能規格</span></div>
+  <div class="modes" role="group" aria-label="版面">
+    <button type="button" data-mode="ui-full">◀ 完整介面</button>
+    <button type="button" data-mode="ui">◀ 看介面</button>
+    <button type="button" data-mode="half" class="on">◐ 平分</button>
+    <button type="button" data-mode="spec">看規格 ▶</button>
+    <button type="button" data-mode="spec-full">完整規格 ▶</button>
+  </div>
+  <label class="pin-toggle"><input type="checkbox" id="showPins" checked> 顯示標號</label>
+</header>
+<main class="split" id="split" data-mode="half">
+  <section class="pane ui-pane" aria-label="介面">
+    <div class="frame-box" id="frameBox"><iframe id="ui" src="index.html?spec=1" title="簽核流程設定介面"></iframe></div>
+  </section>
+  <section class="pane spec-pane" id="specPane" aria-label="功能規格">
+    <div class="doc">
+      <h1>功能規格表</h1>
+      <p class="doc-meta">對應畫面：簽核流程設定（index.html）｜更新：2026-11-05</p>
+      <p class="doc-hint"><span class="pin-demo">1</span>左側標號對應項次；點標號或項次可互相定位。目前畫面上有的項次以紅色標示。</p>
+      <table class="spec">
+        <colgroup><col class="c-n"><col class="c-f"><col class="c-d"><col class="c-r"></colgroup>
+        <thead><tr><th>項次</th><th>功能</th><th>說明</th><th>備註</th></tr></thead>
+        <tbody id="specBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<noscript>此頁面需要啟用 JavaScript。</noscript>
+<script src="js/spec-page.js"></script>
+</body>
+</html>
