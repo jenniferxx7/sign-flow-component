@@ -4,7 +4,8 @@
  */
 (function () {
   'use strict';
-  if (!/[?&]spec=1(&|$)/.test(window.location.search) || window.parent === window) return;
+  if (!/[?&]spec=1(&|$)/.test(window.location.search) || window.parent === window || window.__specMarkers) return;
+  window.__specMarkers = true;
 
   var defs = [];
   var show = true;
