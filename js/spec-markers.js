@@ -150,7 +150,9 @@
       if (b) post({ type: 'pick', n: Number(b.dataset.n) });
     });
     // 「畫面示意」連結保留 spec=1，切換狀態後標號仍在
-    document.querySelectorAll('.demo-menu a').forEach(function (a) {
+    // 已在規格頁內，不需要「查看功能規格」入口
+    document.querySelectorAll('.demo-menu .spec-link').forEach(function (a) { a.remove(); });
+    document.querySelectorAll('.demo-menu a[data-demo]').forEach(function (a) {
       var href = a.getAttribute('href');
       a.setAttribute('href', href + (href.indexOf('?') >= 0 ? '&' : '?') + 'spec=1');
     });
