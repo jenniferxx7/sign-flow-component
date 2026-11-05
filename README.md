@@ -23,7 +23,7 @@ js/spec-page.js       規格內容（項次、說明、標號位置）
 js/spec-markers.js    介面上的標號，只在 spec.html 內嵌時（index.html?spec=1）作用
 ```
 
-修改介面後，記得同步更新 `js/spec-page.js` 裡對應項次的說明與 `sel`（標號位置）。
+修改介面後，記得同步更新 `js/spec-page.js` 裡對應項次的說明、`sel`（標號位置）和 `go`（點項次時自動切換到哪個畫面，步驟定義在同檔的 `GO`）。
 
 `data/org.json` 已停用，可以直接刪除。
 
