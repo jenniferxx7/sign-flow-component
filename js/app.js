@@ -39,7 +39,12 @@
   const NAV = ['emp', 'group', 'dept', 'head', 'org', 'role', 'rel', 'cond'];
   const OPS = { num: ['>', '≥', '<', '≤', '=', '≠'], enum: ['等於', '不等於'], rank: ['以上（含）', '以下（含）', '等於', '不等於'], text: ['包含', '等於', '為空', '不為空'] };
   const MODE_TEXT = { any: '任一人簽核', all: '全部簽核', seq: '依序簽核' };
-  const SAMPLE_TIMES = ['11/03 10:05', '11/03 14:30', '11/03 16:48', '11/04 09:15', '11/04 10:12', '11/04 14:40', '11/04 16:05', '11/05 09:30', '11/05 11:20', '11/05 15:45', '11/06 10:00', '11/06 14:10'];
+  // 可在頁面上維護名單的簽核來源
+  const DIR = {
+    group: { list: 'groups', noun: '群組', prefix: 'G', hint: '群組成員都可以簽核這一關，適合跨部門的審核小組' },
+    role: { list: 'roles', noun: '角色', prefix: 'R', hint: '具備此職能的人員都可以簽核這一關，例如財務審核、法務審核' }
+  };
+  const SAMPLE_TIMES =['11/03 10:05', '11/03 14:30', '11/03 16:48', '11/04 09:15', '11/04 10:12', '11/04 14:40', '11/04 16:05', '11/05 09:30', '11/05 11:20', '11/05 15:45', '11/06 10:00', '11/06 14:10'];
 
   /* ---------- 狀態 ---------- */
   let M = null;
@@ -49,7 +54,8 @@
     screen: 'edit', preview: 'pending', saved: false,
     confirm: null, saving: false, saveError: '',
     version: 0, snapshot: null, prevVersion: 0,
-    history: [], viewVersion: null, verOpen: false
+    history: [], viewVersion: null, verOpen: false,
+    member: null
   };
   let dragFrom = null;
   function set(patch) { Object.assign(S, patch); render(); }
@@ -145,10 +151,11 @@
         + '<span class="avatar">' + initial(it.label) + '</span>'
         + '<span class="opt-text"><span class="opt-label">' + esc(it.label) + '</span><span class="opt-sub">' + esc(it.sub) + '</span></span>'
         + svg(ICON.chev, 16, { sw: 2 }) + '</button>'
+        + (DIR[S.tab] ? iconBtn('editDir', key, '編輯' + DIR[S.tab].noun + '「' + it.label + '」', 'pencil') : '')
         + '<button class="pill-btn' + (added ? ' on' : '') + '" data-act="toggle" data-arg="' + esc(key) + '" aria-pressed="' + added + '">' + (added ? '已加入' : '加入') + '</button>'
         + '</div>';
     }).join('') + (matched.length > LIMIT ? '<p class="muted center">共 ' + matched.length + ' 筆，僅顯示前 ' + LIMIT + ' 筆，請輸入關鍵字縮小範圍</p>' : '')
-      || '<p class="muted center">找不到符合「' + esc(S.q) + '」的項目</p>';
+      || '<p class="muted center">' + (S.q.trim() ? '找不到符合「' + esc(S.q) + '」的項目' : '目前沒有任何項目') + '</p>';
 
     const quick = ['org:1', 'head:self', 'role:fin', 'role:hr'].map((k) => find(k)).map((h, i) => h ? '<button class="chip-btn" data-act="toggle" data-arg="' + ['org:1', 'head:self', 'role:fin', 'role:hr'][i] + '" aria-label="加入 ' + esc(h.item.label) + '">' + svg(ICON.plus, 14, { sw: 2.4 }) + '<span>' + esc(h.item.label) + '</span></button>' : '').join('');
 
@@ -182,6 +189,7 @@
       + '<section class="panel"><div class="panel-head"><h2>' + esc(cur.name) + '</h2><p class="muted">' + esc(cur.desc) + '</p></div>'
       + '<label class="search">' + svg(ICON.search, 18, { sw: 2 }) + '<span class="sr">搜尋</span><input type="search" data-input="q" data-key="q" value="' + esc(S.q) + '" placeholder="' + esc(cur.placeholder) + '"></label>'
       + (S.tab === 'cond' ? '<button class="add-cond" data-act="newCond">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增自訂條件</span></button>' : '')
+      + (DIR[S.tab] ? '<button class="add-cond" data-act="newDir" data-arg="' + S.tab + '">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增' + DIR[S.tab].noun + '</span></button>' : '')
       + '<div class="opt-list">' + rows + '</div></section>'
       + '<aside class="flow" aria-label="簽核流程"><div class="flow-head"><h2>簽核流程</h2>'
       + (empty ? '' : '<span class="muted">共 ' + steps.length + ' 關｜點選關卡查看設定</span>') + '</div>'
@@ -191,6 +199,7 @@
       + '</div></div>'
       + (S.view ? renderDrawer() : '')
       + (S.editor ? renderEditor() : '')
+      + (S.member ? renderMemberEditor() : '')
       + (S.confirm ? renderConfirm() : '');
   }
 
@@ -258,7 +267,9 @@
       + '<div class="drawer-head"><div class="titles"><div class="row">' + tag(cat.name) + (idx >= 0 ? '<span class="muted sm">第 ' + (idx + 1) + ' 關</span>' : '') + '</div>'
       + '<h2>' + esc(item.label) + '</h2><p class="muted">' + esc(item.sub) + '</p></div>' + iconBtn('closeView', '', '關閉', 'close') + '</div>'
       + '<div class="drawer-body">' + rule
-      + '<div class="block"><div class="block-head"><h3>簽核人員</h3><span class="muted sm">' + esc(item.example ? '以申請人' + M.applicant.name + '（' + M.applicant.title + '）為例' : '共 ' + total + ' 位') + '</span></div>' + people + '</div>'
+      + '<div class="block"><div class="block-head"><div class="row"><h3>簽核人員</h3><span class="muted sm">' + esc(item.example ? '以申請人' + M.applicant.name + '（' + M.applicant.title + '）為例' : '共 ' + total + ' 位') + '</span></div>'
+      + (DIR[S.view.split(':')[0]] ? '<button class="btn btn-outline sm" data-act="editDir" data-arg="' + esc(S.view) + '">' + svg(ICON.pencil, 14, { sw: 2 }) + '<span>編輯' + DIR[S.view.split(':')[0]].noun + '</span></button>' : '')
+      + '</div>' + people + '</div>'
       + '<div class="block"><h3>簽核方式</h3><div class="seg cols-2">' + seg(modes, s.mode, 'mode', true) + '</div></div>'
       + '<div class="block"><h3>簽核期限</h3><div class="seg cols-4">' + seg([{ v: 'none', t: '不限' }, { v: '24', t: '24 小時' }, { v: '48', t: '48 小時' }, { v: '72', t: '72 小時' }], s.timeout, 'timeout') + '</div>'
       + (s.timeout !== 'none' ? '<span class="muted sm">逾期未簽時</span><div class="seg cols-3">' + seg([{ v: 'remind', t: '再次提醒' }, { v: 'pass', t: '自動同意' }, { v: 'up', t: '轉呈上一層' }], s.overdue, 'overdue') + '</div>' : '') + '</div>'
@@ -317,6 +328,101 @@
       + (S.tried && !edValid(ed) ? '<span class="error" role="alert">請填寫每個條件的值</span>' : '') + '</div>'
       + '<div class="row"><button class="btn btn-outline" data-act="edCancel">取消</button><button class="btn btn-primary" data-act="edSave">' + (ed.id ? '儲存變更' : '儲存並加入流程') + '</button></div>'
       + '</div></div></div>';
+  }
+
+  /* ---------- 員工群組、簽核角色編輯器 ---------- */
+  // 刪除或修改某個群組／角色時，流程中會受影響的關卡（直接使用它，或預設條件指向它）
+  function stepsUsing(key) {
+    return S.picked.filter((k) => k === key || (k.indexOf('cond:') === 0 && M.presets.some((p) => 'cond:' + p.id === k && p.then === key)));
+  }
+  function dirProblems(mb) {
+    const name = mb.name.trim();
+    const dup = (M.raw[DIR[mb.kind].list] || []).some((x) => x.id !== mb.id && x.name === name);
+    return { name: !name ? '請輸入' + DIR[mb.kind].noun + '名稱' : dup ? '已有同名的' + DIR[mb.kind].noun + '，請換一個名稱' : '', members: mb.memberIds.length ? '' : '至少選擇 1 位成員' };
+  }
+
+  function renderMemberEditor() {
+    const mb = S.member;
+    const d = DIR[mb.kind];
+    const catName = M.categories[mb.kind].name;
+    const bad = dirProblems(mb);
+    const emps = M.categories.emp.items;
+    const byId = new Map(emps.map((e) => [e.id, e]));
+    const term = mb.q.trim().toLowerCase();
+    const matched = emps.filter((e) => !term || (e.label + e.sub).toLowerCase().includes(term));
+    const LIMIT = 50;
+    const used = mb.id ? stepsUsing(mb.kind + ':' + mb.id).map((k) => S.picked.indexOf(k) + 1) : [];
+
+    const chosen = mb.memberIds.length
+      ? '<div class="chips">' + mb.memberIds.map((id) => byId.get(id)).filter(Boolean).map((e) => '<span class="person-chip"><span class="avatar xs">' + initial(e.label) + '</span><span class="pc-name">' + esc(e.label) + '</span>'
+        + '<button class="chip-x" data-act="mbToggle" data-arg="' + esc(e.id) + '" aria-label="移除 ' + esc(e.label) + '">' + svg(ICON.close, 14, { sw: 2.2 }) + '</button></span>').join('') + '</div>'
+      : '<p class="muted sm">尚未選擇成員，請從下方名單勾選</p>';
+
+    const list = matched.slice(0, LIMIT).map((e) => {
+      const on = mb.memberIds.includes(e.id);
+      return '<li class="' + (on ? 'on' : '') + '"><label class="check-row grow"><input type="checkbox" data-change="mbPick" data-arg="' + esc(e.id) + '" data-key="mb-c-' + esc(e.id) + '"' + (on ? ' checked' : '') + '>'
+        + '<span class="avatar sm">' + initial(e.label) + '</span><span class="opt-text"><span>' + esc(e.label) + '</span><span class="opt-sub">' + esc(e.sub) + '</span></span></label></li>';
+    }).join('') || '<li><span class="muted sm">找不到符合「' + esc(mb.q) + '」的員工</span></li>';
+
+    return '<div class="overlay top"><button class="scrim" data-act="mbCancel" aria-label="取消編輯"></button>'
+      + '<div class="drawer wide" role="dialog" aria-label="' + (mb.id ? '編輯' : '新增') + d.noun + '">'
+      + '<div class="drawer-head"><div class="titles">' + tag(catName) + '<h2>' + (mb.id ? '編輯' : '新增') + d.noun + '</h2><p class="muted">' + esc(d.hint) + '</p></div>' + iconBtn('mbCancel', '', '關閉', 'close') + '</div>'
+      + '<div class="drawer-body">'
+      + (used.length ? '<div class="version-note" role="status">' + svg(ICON.swap, 16, { sw: 2 }) + '<span>流程的第 ' + used.join('、') + ' 關使用這個' + d.noun + '，儲存後該關卡的簽核人會一起更新。</span></div>' : '')
+      + '<label class="block"><h3>' + d.noun + '名稱</h3><input class="input' + (mb.tried && bad.name ? ' bad' : '') + '" type="text" data-input="mbName" data-key="mb-name" value="' + esc(mb.name) + '" placeholder="輸入' + d.noun + '名稱">'
+      + (mb.tried && bad.name ? '<span class="error" role="alert">' + bad.name + '</span>' : '') + '</label>'
+      + (mb.kind === 'role' ? '<label class="block"><h3>所屬部門</h3><select class="select" data-change="mbDept"><option value="">不限部門</option>'
+        + M.raw.departments.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === mb.deptId ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select></label>' : '')
+      + '<div class="block"><div class="block-head"><h3>已選成員</h3><span class="muted sm">共 ' + mb.memberIds.length + ' 位</span></div>' + chosen
+      + (mb.tried && bad.members ? '<span class="error" role="alert">' + bad.members + '</span>' : '') + '</div>'
+      + '<div class="block"><h3>加入成員</h3>'
+      + '<label class="search">' + svg(ICON.search, 18, { sw: 2 }) + '<span class="sr">搜尋員工</span><input type="search" data-input="mbQ" data-key="mb-q" value="' + esc(mb.q) + '" placeholder="搜尋姓名、員編或部門"></label>'
+      + '<ul class="people-list pick-list">' + list + '</ul>'
+      + (matched.length > LIMIT ? '<p class="muted sm">共 ' + matched.length + ' 位，僅列出前 ' + LIMIT + ' 位，請輸入關鍵字縮小範圍</p>' : '') + '</div>'
+      + '</div><div class="drawer-foot spread"><div class="row">'
+      + (mb.id ? '<button class="btn btn-danger" data-act="mbDelete"' + (mb.saving ? ' disabled' : '') + '>刪除此' + d.noun + '</button>' : '')
+      + (mb.error ? '<span class="error" role="alert">儲存失敗：' + esc(mb.error) + '</span>' : '') + '</div>'
+      + '<div class="row"><button class="btn btn-outline" data-act="mbCancel">取消</button>'
+      + '<button class="btn btn-primary" data-act="mbSave"' + (mb.saving ? ' disabled aria-busy="true"' : '') + '>' + (mb.saving ? '<span class="spinner sm" aria-hidden="true"></span>儲存中…' : (mb.id ? '儲存變更' : '建立' + d.noun)) + '</button></div>'
+      + '</div></div></div>';
+  }
+
+  function patchMb(p) { set({ member: Object.assign({}, S.member, p) }); }
+
+  // 名單改變後重新整理組織模型；找不到的關卡（例如預設條件指向已刪除的角色）一併移出流程
+  function applyDirectory(kind, list) {
+    M.raw[DIR[kind].list] = list;
+    M = window.OrgModel.build(M.raw);
+    const C = cats();
+    const ok = (k) => !!findIn(C, k);
+    return { picked: S.picked.filter(ok), view: S.view && ok(S.view) ? S.view : null };
+  }
+
+  async function saveMember() {
+    const mb = S.member;
+    const bad = dirProblems(mb);
+    if (bad.name || bad.members) { patchMb({ tried: true }); return; }
+    const rec = { id: mb.id || DIR[mb.kind].prefix + Date.now(), name: mb.name.trim(), memberIds: mb.memberIds.slice() };
+    if (mb.kind === 'role' && mb.deptId) rec.deptId = mb.deptId;
+    const cur = M.raw[DIR[mb.kind].list] || [];
+    const list = mb.id ? cur.map((x) => (x.id === mb.id ? rec : x)) : cur.concat(rec);
+    patchMb({ saving: true, error: '' });
+    let res;
+    try { res = await window.DataSource.saveDirectory(DIR[mb.kind].list, list); } catch (e) { res = { ok: false, message: e.message }; }
+    if (!res || !res.ok) { patchMb({ saving: false, error: (res && res.message) || '請稍後再試。' }); return; }
+    set(Object.assign(applyDirectory(mb.kind, list), { member: null, tab: mb.kind, q: '' }));
+  }
+
+  async function deleteMember(kind, id) {
+    const list = (M.raw[DIR[kind].list] || []).filter((x) => x.id !== id);
+    let res;
+    try { res = await window.DataSource.saveDirectory(DIR[kind].list, list); } catch (e) { res = { ok: false, message: e.message }; }
+    if (!res || !res.ok) { patchMb({ error: (res && res.message) || '請稍後再試。' }); return; }
+    const key = kind + ':' + id;
+    const settings = Object.assign({}, S.settings);
+    delete settings[key];
+    const next = applyDirectory(kind, list);
+    set(Object.assign(next, { member: null, settings, saved: next.picked.length === S.picked.length ? S.saved : false }));
   }
 
   /* ---------- 簽核狀態計算（總覽與完整畫面共用） ---------- */
@@ -595,6 +701,7 @@
         const key = 'cond:' + c.arg;
         set({ custom: S.custom.filter((u) => u.id !== c.arg), picked: S.picked.filter((k) => k !== key), view: S.view === key ? null : S.view, editor: null, saved: false });
       } else if (c.act === 'save') { render(); doSave(); }
+      else if (c.act === 'delDir') { render(); deleteMember(c.kind, c.arg); }
       else render();
     },
     reload: () => window.location.reload(),
@@ -624,6 +731,25 @@
     edCancel: () => set({ editor: null }),
     edSave: () => saveEditor(),
     edDelete: () => ask({ title: '刪除這個自訂條件？', message: '「' + (S.editor.name || '未命名條件') + '」會被刪除；若已加入流程，該關卡也會一併移除。', ok: '刪除', act: 'delCond', arg: S.editor.id }),
+    newDir: (kind) => set({ member: { kind, id: null, name: '', deptId: '', memberIds: [], q: '', tried: false, saving: false, error: '' } }),
+    editDir: (key) => {
+      const i = key.indexOf(':');
+      const kind = key.slice(0, i);
+      const rec = (M.raw[DIR[kind].list] || []).find((x) => x.id === key.slice(i + 1));
+      if (rec) set({ member: { kind, id: rec.id, name: rec.name, deptId: rec.deptId || '', memberIds: rec.memberIds.slice(), q: '', tried: false, saving: false, error: '' } });
+    },
+    mbToggle: (id) => patchMb({ memberIds: S.member.memberIds.filter((x) => x !== id) }),
+    mbCancel: () => { if (!S.member.saving) set({ member: null }); },
+    mbSave: () => saveMember(),
+    mbDelete: () => {
+      const mb = S.member;
+      const noun = DIR[mb.kind].noun;
+      const used = stepsUsing(mb.kind + ':' + mb.id).map((k) => S.picked.indexOf(k) + 1);
+      ask({
+        title: '刪除這個' + noun + '？', ok: '刪除', act: 'delDir', kind: mb.kind, arg: mb.id,
+        message: '「' + mb.name + '」會被刪除，之後不能再選為簽核人。' + (used.length ? '流程的第 ' + used.join('、') + ' 關使用這個' + noun + '，也會一併移除。' : '')
+      });
+    },
     preview: (v) => set({ preview: v }),
     viewVersion: (v) => set({ viewVersion: Number(v), verOpen: false }),
     toggleVer: () => set({ verOpen: !S.verOpen }),
@@ -633,14 +759,23 @@
   const INPUT = {
     q: (v) => set({ q: v }),
     edName: (v) => patchEd({ name: v }),
-    edValue: (v, i) => patchClause(Number(i), { value: v })
+    edValue: (v, i) => patchClause(Number(i), { value: v }),
+    // 名稱只在按下儲存時檢查，打字時不重繪；已顯示錯誤訊息時才重繪，讓訊息隨輸入消失
+    mbName: (v) => { S.member.name = v; if (S.member.tried) render(); },
+    mbQ: (v) => patchMb({ q: v })
   };
   const CHANGE = {
     perm: (el) => setSet(S.view, { [el.dataset.arg]: el.checked }),
     edField: (el) => { const f = field(el.value); patchClause(Number(el.dataset.arg), { field: f.key, op: OPS[f.type][0], value: f.options ? f.options[0] : '' }); },
     edOp: (el) => patchClause(Number(el.dataset.arg), { op: el.value }),
     edValue: (el) => patchClause(Number(el.dataset.arg), { value: el.value }),
-    edThen: (el) => patchEd({ then: el.value })
+    edThen: (el) => patchEd({ then: el.value }),
+    mbDept: (el) => patchMb({ deptId: el.value }),
+    mbPick: (el) => {
+      const id = el.dataset.arg;
+      const ids = S.member.memberIds.filter((x) => x !== id);
+      patchMb({ memberIds: el.checked ? ids.concat(id) : ids });
+    }
   };
 
   $app.addEventListener('click', (e) => {
@@ -649,11 +784,14 @@
     const fn = ACT[el.dataset.act];
     if (fn) fn(el.dataset.arg, el);
   });
-  $app.addEventListener('input', (e) => {
+  // 注音、拼音等輸入法組字期間不重繪畫面，否則會打斷組字、留下「ㄨㄛˇ」之類的注音符號；組字完成後再更新
+  const onInput = (e) => {
     const el = e.target;
     const fn = INPUT[el.dataset && el.dataset.input];
     if (fn) fn(el.value, el.dataset.arg);
-  });
+  };
+  $app.addEventListener('input', (e) => { if (!e.isComposing) onInput(e); });
+  $app.addEventListener('compositionend', onInput);
   $app.addEventListener('change', (e) => {
     const el = e.target;
     const fn = CHANGE[el.dataset && el.dataset.change];
@@ -663,6 +801,7 @@
     if (e.key !== 'Escape' || !M) return;
     if (S.verOpen) set({ verOpen: false });
     else if (S.confirm) set({ confirm: null });
+    else if (S.member) { if (!S.member.saving) set({ member: null }); }
     else if (S.editor) set({ editor: null });
     else if (S.view) set({ view: null });
   });
