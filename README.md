@@ -17,7 +17,13 @@ js/data-source.js     資料層：讀取組織資料、儲存流程（之後接 
 js/org-model.js       把組織資料轉成 8 種簽核來源，並算出動態簽核人
 js/app.js             畫面與互動
 data/org.js           組織資料（目前是範例資料）
+spec.html             功能規格文件：左側為介面（含標號），右側為規格表
+css/spec.css          規格文件樣式
+js/spec-page.js       規格內容（項次、說明、標號位置）
+js/spec-markers.js    介面上的標號，只在 spec.html 內嵌時（index.html?spec=1）作用
 ```
+
+修改介面後，記得同步更新 `js/spec-page.js` 裡對應項次的說明與 `sel`（標號位置）。
 
 `data/org.json` 已停用，可以直接刪除。
 
