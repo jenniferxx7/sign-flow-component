@@ -25,7 +25,16 @@
   }
 
   // 找出畫面上看得到、沒有被遮罩蓋住的第一個元素
+  // 檢查時先隱藏標號圖層，避免標號本身被誤判為遮住元素
   function visibleEl(d) {
+    if (!layer) return null;
+    var prev = layer.style.display;
+    layer.style.display = 'none';
+    var found = findVisible(d);
+    layer.style.display = prev;
+    return found;
+  }
+  function findVisible(d) {
     var list = matches(d);
     for (var i = 0; i < list.length; i++) {
       var el = list[i];
@@ -43,7 +52,6 @@
   function draw() {
     pending = 0;
     if (!layer) return;
-    layer.style.display = 'none';
     var placed = [];
     var html = '';
     var nums = [];
@@ -61,7 +69,6 @@
       html += '<button type="button" class="spec-pin" data-n="' + d.n + '" style="left:' + x + 'px;top:' + y + 'px" aria-label="規格項次 ' + d.n + '">' + d.n + '</button>';
     });
     layer.innerHTML = show ? html : '';
-    layer.style.display = '';
     var sig = nums.join(',');
     if (sig !== lastSent) { lastSent = sig; post({ type: 'visible', nums: nums }); }
   }
