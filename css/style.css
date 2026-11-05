@@ -160,6 +160,8 @@ ol, ul { margin: 0; padding: 0; list-style: none; }
 .chip-x { width: 24px; height: 24px; margin-right: -6px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 50%; color: var(--muted); }
 .chip-x:hover { background: var(--line); color: var(--ink); }
 .input.bad { border-color: var(--danger); }
+/* 面板或對話框開啟時隱藏右下角的「畫面示意」，避免蓋住面板底部的按鈕 */
+body:has(.overlay, .modal-wrap) .demo-menu { display: none; }
 
 .clauses { display: flex; flex-direction: column; gap: 8px; }
 .clause { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); }
