@@ -87,10 +87,18 @@
     if (v) { v.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); flash(v.el); window.setTimeout(schedule, 400); return; }
     var el = matches(d).filter(function (e) { var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0];
     if (el) el.scrollIntoView({ block: 'center' });
-    window.setTimeout(function () {
-      var v2 = visibleEl(d);
-      if (v2) { flash(v2.el); schedule(); } else post({ type: noFallback ? 'runFailed' : 'missing', n: n });
-    }, 150);
+    // 自動切換後畫面可能還在儲存中，最多再等 3 秒
+    var tries = noFallback ? 20 : 1;
+    (function check() {
+      window.setTimeout(function () {
+        var v2 = visibleEl(d);
+        if (!v2) {
+          var e2 = matches(d).filter(function (x) { var r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0];
+          if (e2) { e2.scrollIntoView({ block: 'center' }); v2 = visibleEl(d); }
+        }
+        if (v2) { flash(v2.el); schedule(); } else if (--tries > 0) check(); else post({ type: noFallback ? 'runFailed' : 'missing', n: n });
+      }, 150);
+    })();
   }
 
   // 依序點擊步驟（每步等待元素出現），完成後標示項次
