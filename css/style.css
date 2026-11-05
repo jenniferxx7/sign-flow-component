@@ -153,6 +153,13 @@ ol, ul { margin: 0; padding: 0; list-style: none; }
 .seg-h { font-size: 12px; color: var(--muted); }
 .check-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
 .check-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.check-row.grow { flex: 1; min-width: 0; cursor: pointer; }
+.pick-list { max-height: 320px; }
+.pick-list li { padding: 4px 14px; }
+.pick-list li.on { background: var(--accent-bg); }
+.chip-x { width: 24px; height: 24px; margin-right: -6px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 50%; color: var(--muted); }
+.chip-x:hover { background: var(--line); color: var(--ink); }
+.input.bad { border-color: var(--danger); }
 
 .clauses { display: flex; flex-direction: column; gap: 8px; }
 .clause { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); }
