@@ -72,15 +72,43 @@
     window.setTimeout(function () { el.classList.remove('spec-flash'); }, 1600);
   }
 
-  function focus(n) {
+  // 定位到項次：看得到就直接標示；元素在畫面外先捲動再確認；仍看不到（不在此畫面或被遮住）就回報 missing
+  function focus(n, noFallback) {
     var d = defs.filter(function (x) { return x.n === n; })[0];
     if (!d) return;
     var v = visibleEl(d);
-    var el = v ? v.el : matches(d).filter(function (e) { var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0];
-    if (!el) { post({ type: 'missing', n: n }); return; }
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    flash(el);
-    window.setTimeout(schedule, 400);
+    if (v) { v.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); flash(v.el); window.setTimeout(schedule, 400); return; }
+    var el = matches(d).filter(function (e) { var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0];
+    if (el) el.scrollIntoView({ block: 'center' });
+    window.setTimeout(function () {
+      var v2 = visibleEl(d);
+      if (v2) { flash(v2.el); schedule(); } else post({ type: noFallback ? 'runFailed' : 'missing', n: n });
+    }, 150);
+  }
+
+  // 依序點擊步驟（每步等待元素出現），完成後標示項次
+  function waitFor(sel, ms) {
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function poll() {
+        var el = document.querySelector(sel);
+        if (el && !el.disabled) resolve(el);
+        else if (Date.now() - t0 > ms) resolve(null);
+        else window.setTimeout(poll, 60);
+      })();
+    });
+  }
+  function run(steps, n) {
+    var i = 0;
+    (function next() {
+      if (i >= steps.length) { window.setTimeout(function () { focus(n, true); }, 250); return; }
+      var s = steps[i++];
+      waitFor(s.click, s.optional ? 900 : 4000).then(function (el) {
+        if (!el && !s.optional) { post({ type: 'runFailed', n: n }); return; }
+        if (el) el.click();
+        window.setTimeout(next, 120);
+      });
+    })();
   }
 
   window.addEventListener('message', function (e) {
@@ -89,6 +117,7 @@
     if (m.type === 'markers') { defs = m.items || []; show = m.show !== false; lastSent = null; schedule(); }
     if (m.type === 'show') { show = !!m.show; schedule(); }
     if (m.type === 'focus') focus(m.n);
+    if (m.type === 'run') run(m.steps || [], m.n);
   });
 
   function init() {
