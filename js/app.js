@@ -186,7 +186,7 @@
       + '<aside class="flow" aria-label="簽核流程"><div class="flow-head"><h2>簽核流程</h2>'
       + (empty ? '' : '<span class="muted">共 ' + steps.length + ' 關｜點選關卡查看設定</span>') + '</div>'
       + (isDirty() ? '<div class="version-note" role="status">' + svg(ICON.swap, 16, { sw: 2 }) + '<span>流程已修改，儲存後會成為<strong>第 ' + (S.version + 1) + ' 版</strong>。'
-        + (M.sample.inProgressCount ? '簽核中的 ' + M.sample.inProgressCount + ' 張' + esc(M.formName) + '仍依第 ' + S.version + ' 版完成。' : '') + '</span></div>' : '')
+        + (M.sample.inProgressCount ? '簽核中的 ' + M.sample.inProgressCount + ' 張' + esc(M.formName) + '仍依第 ' + S.version + ' 版完成。' : '目前沒有簽核中的單據，儲存後新送出的' + esc(M.formName) + '會直接套用新版本。') + '</span></div>' : '')
       + flow + '</aside>'
       + '</div></div>'
       + (S.view ? renderDrawer() : '')
@@ -600,11 +600,12 @@
     reload: () => window.location.reload(),
     save: () => {
       if (!S.picked.length || S.saving) return;
-      if (isDirty()) {
-        const n = M.sample.inProgressCount;
+      // 只有在已有單據正在簽核時才需要提醒新舊版本的差別；0 張時直接儲存為新版本
+      const n = M.sample.inProgressCount;
+      if (isDirty() && n > 0) {
         ask({
           tone: 'info', title: '儲存為第 ' + (S.version + 1) + ' 版流程？',
-          message: (n ? '目前有 ' + n + ' 張' + M.formName + '正在簽核，會繼續依第 ' + S.version + ' 版流程完成；' : '')
+          message: '目前有 ' + n + ' 張' + M.formName + '正在簽核，會繼續依第 ' + S.version + ' 版流程完成；'
             + '儲存後新送出的' + M.formName + '才會套用第 ' + (S.version + 1) + ' 版流程。',
           ok: '儲存為第 ' + (S.version + 1) + ' 版', act: 'save'
         });
