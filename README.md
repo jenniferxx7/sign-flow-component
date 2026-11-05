@@ -72,6 +72,8 @@ js/spec-markers.js    介面上的標號，只在 spec.html 內嵌時（index.ht
 | 載入失敗 | `?demo=load-error` | 顯示錯誤訊息與「重新載入」按鈕 |
 | 儲存失敗 | `?demo=save-error` | 加入關卡後按「儲存流程」，會顯示失敗訊息與「重新儲存」 |
 
+選單最下方的「查看功能規格」會開啟 `spec.html`（在規格頁內嵌時自動隱藏）。
+
 正式上線前，可以把 `index.html` 裡的 `demo-menu` 區塊移除。
 
 ## 改成即時串接 HR 系統
