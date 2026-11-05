@@ -29,5 +29,14 @@
     return { ok: true };
   }
 
-  window.DataSource = { loadOrg, saveFlow };
+  // 儲存員工群組或簽核角色名單。kind 為 'groups' 或 'roles'，list 為完整名單（格式同 data/org.js）。
+  // 回傳 { ok: true } 或 { ok: false, message }。目前只在主控台輸出，接上後端時改成呼叫 API。
+  async function saveDirectory(kind, list) {
+    await wait(500);
+    if (DEMO === 'save-error') return { ok: false, message: '伺服器暫時無法回應，請稍後再試。' };
+    console.info('[DataSource] saveDirectory', kind, list);
+    return { ok: true };
+  }
+
+  window.DataSource = { loadOrg, saveFlow, saveDirectory };
 })();
