@@ -8,7 +8,7 @@
 
   const SPEC = [
     {
-      name: '一、設定簽核關卡', path: '開啟頁面即為此畫面',
+      name: '一、設定簽核關卡', path: '開啟頁面即為此畫面', go: 'flow',
       items: [
         { f: '頁首', sel: '.topbar:has([data-act="save"]) .titles', d: ['顯示表單名稱與「設定簽核關卡」。', '已儲存過：顯示「目前生效：第 N 版」。'] },
         { f: '清除全部', sel: '[data-act="clear"]', d: ['移除流程中所有關卡及其設定，**需確認**。', '無關卡或儲存中：停用。'] },
@@ -21,14 +21,14 @@
         { f: '搜尋', sel: '.panel .search', d: ['依名稱、說明文字即時篩選。', '最多列 100 筆，超過時提示縮小範圍。', '無結果：顯示「找不到符合…」。'], r: '員工人數多時，建議改由伺服器搜尋。' },
         { f: '選項列', sel: '.opt-row .opt-main', d: ['點選開啟關卡詳細面板；未加入也可預覽。', '已加入或檢視中的列反白。'] },
         { f: '加入／已加入', sel: '.opt-row .pill-btn', d: ['「加入」：加到流程最後一關。', '「已加入」：點選移除，**需確認**。', '同一項目只能加入一次。'] },
-        { f: '快速加入常用關卡', sel: '.empty-quick', d: ['流程沒有關卡時才顯示。', '直屬主管、申請人所屬部門主管、財務審核、人資審核，點選直接加入。'], r: '組織資料沒有該項目時不顯示。' },
+        { f: '快速加入常用關卡', sel: '.empty-quick', go: 'edit', d: ['流程沒有關卡時才顯示。', '直屬主管、申請人所屬部門主管、財務審核、人資審核，點選直接加入。'], r: '組織資料沒有該項目時不顯示。' },
         { f: '簽核流程', sel: '.timeline', d: ['依序顯示每關：序號、來源類型、名稱、簽核方式｜期限。', '起點「申請人送出表單」，終點「簽核完成，結案歸檔」。', '點選關卡開啟詳細面板。'] },
         { f: '調整順序、移除關卡', sel: '.tl-tools', d: ['上移／下移：第 1 關不可上移，最後一關不可下移。', '可直接拖曳關卡卡片排序。', '×：移除該關，**需確認**。'] },
-        { f: '版本提示', sel: '.flow .version-note', d: ['已儲存的流程被修改時顯示。', '說明儲存後成為第 N+1 版，簽核中單據仍依原版本完成。'] }
+        { f: '版本提示', sel: '.flow .version-note', go: 'dirty', d: ['已儲存的流程被修改時顯示。', '說明儲存後成為第 N+1 版，簽核中單據仍依原版本完成。'] }
       ]
     },
     {
-      name: '二、簽核來源（8 種）', path: '點選左側簽核來源',
+      name: '二、簽核來源（8 種）', path: '點選左側簽核來源', go: 'edit',
       items: [
         { f: '指定員工', sel: '.nav-btn[data-arg="emp"]', d: ['選項：全體員工，顯示部門｜職稱｜員編。', '簽核人：選定的員工。', '預設簽核方式：全部簽核。'], r: '資料：`employees`' },
         { f: '員工群組', sel: '.nav-btn[data-arg="group"]', d: ['選項：員工群組，顯示成員數。', '簽核人：群組全體成員。', '預設簽核方式：任一人簽核。', '可新增、編輯、刪除群組（第五節）。'], r: '資料：`groups`' },
@@ -53,7 +53,7 @@
       ]
     },
     {
-      name: '三、關卡詳細面板', path: '點選選項列，或流程中的關卡',
+      name: '三、關卡詳細面板', path: '點選選項列，或流程中的關卡', go: 'drawer',
       items: [
         { f: '面板標頭', sel: '.overlay:not(.top) .drawer-head', d: ['顯示來源類型、第 N 關（已加入時）、名稱與說明。', '按 ×、Esc 或面板外側關閉。'] },
         { f: '觸發條件', sel: '.overlay:not(.top) h3', text: '觸發條件', d: ['僅條件式關卡顯示。', '列出條件、符合時的簽核人、不符合時的處理。', '自訂條件可按「編輯條件」修改。'] },
@@ -65,9 +65,9 @@
       ]
     },
     {
-      name: '四、自訂條件', path: '條件式 →「新增自訂條件」，或自訂條件的「編輯條件」',
+      name: '四、自訂條件', path: '條件式 →「新增自訂條件」，或自訂條件的「編輯條件」', go: 'condEd',
       items: [
-        { f: '新增自訂條件', sel: '[data-act="newCond"]', d: ['開啟條件編輯器。'] },
+        { f: '新增自訂條件', sel: '[data-act="newCond"]', go: 'tabCond', d: ['開啟條件編輯器。'] },
         { f: '條件名稱', sel: '[data-input="edName"]', d: ['選填；留空時依條件內容自動命名。'] },
         {
           f: '觸發條件', sel: '.overlay.top h3', text: '觸發條件',
@@ -81,10 +81,10 @@
       ]
     },
     {
-      name: '五、員工群組、簽核角色', path: '簽核來源切到「員工群組」或「簽核角色」',
+      name: '五、員工群組、簽核角色', path: '簽核來源切到「員工群組」或「簽核角色」', go: 'member',
       items: [
-        { f: '新增群組／角色', sel: '[data-act="newDir"]', d: ['開啟編輯器，建立新的群組或角色。'] },
-        { f: '編輯群組／角色', sel: '[data-act="editDir"]', d: ['每列的筆型圖示，或詳細面板的「編輯群組／角色」。'] },
+        { f: '新增群組／角色', sel: '[data-act="newDir"]', go: 'tabRole', d: ['開啟編輯器，建立新的群組或角色。'] },
+        { f: '編輯群組／角色', sel: '[data-act="editDir"]', go: 'tabRole', d: ['每列的筆型圖示，或詳細面板的「編輯群組／角色」。'] },
         { f: '名稱', sel: '[data-input="mbName"]', d: ['必填，不可與現有名稱重複。', '按儲存時檢查，錯誤顯示於欄位下方。'] },
         { f: '所屬部門', sel: '[data-change="mbDept"]', d: ['僅簽核角色有此欄位。', '預設「不限部門」。'] },
         { f: '已選成員', sel: '.overlay.top h3', text: '已選成員', d: ['顯示人數與成員標籤，按 × 移除。', '至少 1 位。'] },
@@ -98,13 +98,13 @@
       ]
     },
     {
-      name: '六、確認對話框', path: '執行移除、刪除，或儲存新版本時',
+      name: '六、確認對話框', path: '執行移除、刪除，或儲存新版本時', go: 'confirm',
       items: [
         { f: '確認對話框', sel: '.modal', d: ['出現時機：', ['移除關卡、清除全部。', '刪除自訂條件、刪除群組／角色。', '有簽核中單據時儲存新版本。'], '預設焦點在「取消」；Esc 或點外側取消。'] }
       ]
     },
     {
-      name: '七、簽核流程總覽', path: '「儲存流程」成功後',
+      name: '七、簽核流程總覽', path: '「儲存流程」成功後', go: 'done',
       items: [
         { f: '返回編輯', sel: '[data-act="back"]', d: ['回到設定畫面，保留目前設定。'] },
         { f: '儲存結果', sel: '.banner.ok', d: ['顯示版本與關卡數。', '有簽核中單據時，說明仍依前一版完成。'] },
@@ -117,7 +117,7 @@
       ]
     },
     {
-      name: '八、完整簽核畫面', path: '總覽 →「查看完整簽核畫面」',
+      name: '八、完整簽核畫面', path: '總覽 →「查看完整簽核畫面」', go: 'status',
       items: [
         { f: '返回簽核流程總覽', sel: '[data-act="toOverview"]', d: ['回到總覽。'] },
         { f: '情境切換', sel: '.seg-inline', d: ['同總覽的三種情境。', '標題旁的狀態標籤同步變更。'] },
@@ -128,13 +128,36 @@
     {
       name: '九、系統狀態', path: '右下角「畫面示意」切換',
       items: [
-        { f: '載入中', sel: '.state-center', d: ['骨架畫面＋「正在載入組織資料…」。'] },
-        { f: '載入失敗', sel: '.state-card', d: ['顯示錯誤原因與「重新載入」。'] },
-        { f: '儲存失敗', sel: '.note.error', d: ['頁首顯示失敗原因，按鈕改為「重新儲存」。', '已設定的關卡保留。'] },
-        { f: '畫面示意', sel: '.demo-menu summary', d: ['切換正常、載入中、載入失敗、儲存失敗。', '開啟面板或對話框時隱藏。'], r: '僅供示意，正式上線前移除。' }
+        { f: '載入中', sel: '.state-center', go: 'loading', d: ['骨架畫面＋「正在載入組織資料…」。'] },
+        { f: '載入失敗', sel: '.state-card', go: 'loadError', d: ['顯示錯誤原因與「重新載入」。'] },
+        { f: '儲存失敗', sel: '.note.error', go: 'saveError', d: ['頁首顯示失敗原因，按鈕改為「重新儲存」。', '已設定的關卡保留。'] },
+        { f: '畫面示意', sel: '.demo-menu summary', go: 'edit', d: ['切換正常、載入中、載入失敗、儲存失敗。', '開啟面板或對話框時隱藏。'], r: '僅供示意，正式上線前移除。' }
       ]
     }
   ];
+
+  /* ---------- 前往畫面：從初始畫面依序點擊，切換到該項次所在的畫面 ---------- */
+  const C = (sel, optional) => ({ click: sel, optional: !!optional });
+  const FLOW = [C('.empty-quick [data-arg="org:1"]'), C('.nav-btn[data-arg="role"]'), C('.pill-btn[data-arg="role:fin"]'), C('.nav-btn[data-arg="emp"]')];
+  const SAVE = [C('[data-act="save"]'), C('[data-act="confirmOk"]', true)];
+  const DIRTY = FLOW.concat(SAVE, [C('[data-act="back"]'), C('.nav-btn[data-arg="head"]'), C('.pill-btn[data-arg="head:self"]')]);
+  const DONE = DIRTY.concat(SAVE);
+  const GO = {
+    edit: { name: '設定畫面（尚未加入關卡）', steps: [] },
+    flow: { name: '設定畫面（已加入關卡）', steps: FLOW },
+    dirty: { name: '設定畫面（修改已儲存的流程）', steps: DIRTY },
+    drawer: { name: '關卡詳細面板', steps: [C('.nav-btn[data-arg="cond"]'), C('.opt-row .opt-main')] },
+    tabCond: { name: '條件式清單', steps: [C('.nav-btn[data-arg="cond"]')] },
+    condEd: { name: '自訂條件編輯器', steps: [C('.nav-btn[data-arg="cond"]'), C('[data-act="newCond"]')] },
+    tabRole: { name: '簽核角色清單', steps: [C('.nav-btn[data-arg="role"]')] },
+    member: { name: '簽核角色編輯器', steps: [C('.nav-btn[data-arg="role"]'), C('.pill-btn[data-arg="role:fin"]'), C('.opt-row [data-act="editDir"][data-arg="role:fin"]')] },
+    confirm: { name: '確認對話框', steps: FLOW.concat([C('[data-act="clear"]')]) },
+    done: { name: '簽核流程總覽', steps: DONE },
+    status: { name: '完整簽核畫面', steps: DONE.concat([C('[data-act="openStatus"]')]) },
+    loading: { name: '載入中', demo: 'loading', steps: [] },
+    loadError: { name: '載入失敗', demo: 'load-error', steps: [] },
+    saveError: { name: '儲存失敗', demo: 'save-error', steps: FLOW.concat([C('[data-act="save"]')]) }
+  };
 
   /* ---------- 規格表 ---------- */
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -146,7 +169,7 @@
   const rows = SPEC.map((sec) => '<tr class="sec"><td colspan="4"><span class="sec-name">' + esc(sec.name) + '</span><span class="sec-path">進入：' + esc(sec.path) + '</span></td></tr>'
     + sec.items.map((it) => {
       n += 1;
-      ITEMS.push({ n, sel: it.sel, text: it.text || '', path: sec.path });
+      ITEMS.push({ n, sel: it.sel, text: it.text || '', path: sec.path, go: it.go || sec.go, label: it.f });
       return '<tr class="item" id="spec-' + n + '" data-n="' + n + '"><td class="num"><span>' + n + '</span></td><td class="fn">' + esc(it.f) + '</td><td>' + list(it.d) + '</td><td class="note">' + (it.r ? rich(it.r) : '—') + '</td></tr>';
     }).join('')).join('');
   document.getElementById('specBody').innerHTML = rows;
@@ -170,7 +193,7 @@
         const d = frame.contentDocument;
         if (!d || !d.body) return;
         const s = d.createElement('script');
-        s.src = 'js/spec-markers.js?v=2';
+        s.src = 'js/spec-markers.js?v=3';
         d.body.appendChild(s);
       } catch (e) { /* 本機開啟時無法存取，index.html 本身已載入標號程式 */ }
     }, 1000);
@@ -194,7 +217,11 @@
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (!m || m.source !== 'sign-flow-spec' || e.source !== frame.contentWindow) return;
-    if (m.type === 'ready') { gotReady = true; sendMarkers(); }
+    if (m.type === 'ready') {
+      gotReady = true;
+      sendMarkers();
+      if (pendingRun) { send({ type: 'run', steps: pendingRun.steps, n: pendingRun.n }); pendingRun = null; }
+    }
     if (m.type === 'visible') {
       const on = new Set(m.nums);
       document.querySelectorAll('tr.item').forEach((r) => r.classList.toggle('live', on.has(Number(r.dataset.n))));
@@ -203,18 +230,27 @@
       if (document.getElementById('split').dataset.mode === 'ui-full') setMode('half');
       highlight(m.n, true);
     }
-    if (m.type === 'missing') {
-      const it = ITEMS.find((x) => x.n === m.n);
-      say('項次 ' + m.n + ' 不在目前畫面。進入方式：' + (it ? it.path : ''));
-    }
+    // 項次不在目前畫面：重新載入介面，依步驟自動切換到該畫面後再標示
+    if (m.type === 'missing') goTo(m.n);
+    if (m.type === 'runFailed') say('無法自動切換到項次 ' + m.n + ' 的畫面。進入方式：' + ((ITEMS.find((x) => x.n === m.n) || {}).path || ''));
   });
+
+  let pendingRun = null;
+  function goTo(num) {
+    const it = ITEMS.find((x) => x.n === num);
+    const g = it && GO[it.go];
+    if (!g) return;
+    pendingRun = { steps: g.steps, n: num };
+    say('切換到「' + g.name + '」，標示項次 ' + num);
+    frame.src = 'index.html?spec=1&v=3' + (g.demo ? '&demo=' + g.demo : '') + '&t=' + Date.now();
+  }
 
   document.getElementById('specBody').addEventListener('click', (e) => {
     const row = e.target.closest('tr.item');
     if (!row) return;
     const num = Number(row.dataset.n);
     highlight(num, false);
-    if (document.getElementById('split').dataset.mode === 'spec-full') { say('切換到其他版面即可看到介面上的位置'); return; }
+    if (document.getElementById('split').dataset.mode === 'spec-full') setMode('half');
     send({ type: 'focus', n: num });
   });
   pins.addEventListener('change', () => send({ type: 'show', show: pins.checked }));
