@@ -158,8 +158,23 @@
   const toast = document.getElementById('toast');
   const send = (m) => { m.source = 'sign-flow-spec-parent'; if (frame.contentWindow) frame.contentWindow.postMessage(m, '*'); };
   const sendMarkers = () => send({ type: 'markers', items: ITEMS.map((x) => ({ n: x.n, sel: x.sel, text: x.text })), show: pins.checked });
-  // 介面先載入完成時，「ready」可能早於這裡的監聽，所以 iframe 載入後也主動送一次
-  frame.addEventListener('load', sendMarkers);
+  // 介面先載入完成時，「ready」可能早於這裡的監聽，所以 iframe 載入後也主動送一次。
+  // 若瀏覽器用了快取的舊版 index.html（沒有載入標號程式），在同網域時直接補載入。
+  let gotReady = false;
+  frame.addEventListener('load', () => {
+    gotReady = false;
+    sendMarkers();
+    setTimeout(() => {
+      if (gotReady) return;
+      try {
+        const d = frame.contentDocument;
+        if (!d || !d.body) return;
+        const s = d.createElement('script');
+        s.src = 'js/spec-markers.js?v=2';
+        d.body.appendChild(s);
+      } catch (e) { /* 本機開啟時無法存取，index.html 本身已載入標號程式 */ }
+    }, 1000);
+  });
   sendMarkers();
   let toastTimer = 0;
   function say(text) {
@@ -179,7 +194,7 @@
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (!m || m.source !== 'sign-flow-spec' || e.source !== frame.contentWindow) return;
-    if (m.type === 'ready') sendMarkers();
+    if (m.type === 'ready') { gotReady = true; sendMarkers(); }
     if (m.type === 'visible') {
       const on = new Set(m.nums);
       document.querySelectorAll('tr.item').forEach((r) => r.classList.toggle('live', on.has(Number(r.dataset.n))));
