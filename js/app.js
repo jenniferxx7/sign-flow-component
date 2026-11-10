@@ -99,10 +99,69 @@
   }
   const find = (key) => findIn(cats(), key);
 
+  // 條件式關卡實際由「符合時的簽核人」簽核，例外處理也套用在它身上
+  function targetKey(key) {
+    if (key.indexOf('cond:') !== 0) return key;
+    const id = key.slice(5);
+    const u = M.presets.concat(S.custom).find((x) => x.id === id);
+    return u ? u.then : key;
+  }
+  const isSup = (key) => { const t = findIn(M.categories, targetKey(key)); return !!(t && t.cat.sup); };
+  const ABSENT = {
+    sup: [{ v: 'up', t: '往上一層找' }, { v: 'deputy', t: '改由職務代理人簽' }, { v: 'skip', t: '略過此關' }],
+    other: [{ v: 'boss', t: '由該員工的主管簽' }, { v: 'deputy', t: '改由職務代理人簽' }, { v: 'skip', t: '略過此關' }]
+  };
+  const NOTFOUND = [{ v: 'top', t: '由最高主管簽' }, { v: 'skip', t: '略過此關' }, { v: 'block', t: '不准送出' }];
   function getSet(key) {
     const hit = find(key);
     const mode = hit && hit.item.seq ? 'seq' : (hit ? hit.cat.mode : 'all');
-    return Object.assign({ mode, timeout: '72', overdue: 'remind', allowReturn: true, allowAdd: false, skipSelf: true }, S.settings[key] || {});
+    return Object.assign({
+      mode, timeout: '72', overdue: 'remind', allowReturn: true, allowAdd: false, skipSelf: true,
+      who: { mgr: true, deputy: false }, absent: isSup(key) ? 'up' : 'boss', notfound: 'top', dedupe: true
+    }, S.settings[key] || {});
+  }
+  const resolveStep = (key) => M.resolve(targetKey(key), getSet(key));
+
+  // 整條流程的實際簽核人：再套用「申請人即簽核人」與「重複簽核人」兩條規則
+  function flowResolve(steps) {
+    const signed = new Map();
+    return steps.map((st, i) => {
+      const s = getSet(st.key);
+      const r = resolveStep(st.key);
+      let list = r.signers.slice();
+      const notes = r.notes.slice();
+      let skipped = r.skip;
+      let reason = r.reason;
+      if (!skipped && !r.block) {
+        if (s.skipSelf && list.some((p) => p.id === M.applicant.id)) {
+          list = list.filter((p) => p.id !== M.applicant.id);
+          notes.push('簽核人與申請人相同，略過申請人');
+        }
+        if (s.dedupe) {
+          const dup = list.filter((p) => signed.has(p.id));
+          if (dup.length) {
+            list = list.filter((p) => !signed.has(p.id));
+            notes.push(dup.map((p) => p.name + '已在第 ' + signed.get(p.id) + ' 關簽核').join('、') + '，不重複簽核');
+          }
+        }
+        if (!list.length) { skipped = true; reason = (notes[notes.length - 1] || '沒有簽核人') + '，自動略過此關'; }
+        list.forEach((p) => { if (!signed.has(p.id)) signed.set(p.id, i + 1); });
+      }
+      return { list, notes, skipped, block: r.block, reason };
+    });
+  }
+
+  // 例外處理有改過預設值時的摘要（卡片、總覽用）
+  function excSummary(key) {
+    const s = getSet(key);
+    const out = [];
+    if (isSup(key) && (s.who.deputy || !s.who.mgr)) out.push(s.who.mgr ? '副主管 → 主管' : '僅副主管');
+    const def = isSup(key) ? 'up' : 'boss';
+    if (s.absent !== def) out.push('不在職：' + (ABSENT[isSup(key) ? 'sup' : 'other'].find((o) => o.v === s.absent) || {}).t);
+    if (s.notfound !== 'top') out.push('找不到：' + (NOTFOUND.find((o) => o.v === s.notfound) || {}).t);
+    if (!s.dedupe) out.push('重複不略過');
+    if (!s.skipSelf) out.push('申請人不略過');
+    return out.join('｜');
   }
   function setSet(key, patch) { set({ saved: false, settings: Object.assign({}, S.settings, { [key]: Object.assign(getSet(key), patch) }) }); }
   function togglePick(key) {
@@ -169,7 +228,8 @@
           + '<div class="tl-card' + (S.view === st.key ? ' on' : '') + '">'
           + '<span class="grip" title="拖曳調整順序" aria-hidden="true">' + svg(ICON.grip, 16) + '</span>'
           + '<button class="tl-open" data-act="open" data-arg="' + esc(st.key) + '" aria-label="查看第 ' + (i + 1) + ' 關設定">' + tag(st.cat.name)
-          + '<span class="tl-label">' + esc(st.item.label) + '</span><span class="tl-sum">' + esc(summary(st.key)) + '</span></button>'
+          + '<span class="tl-label">' + esc(st.item.label) + '</span><span class="tl-sum">' + esc(summary(st.key)) + '</span>'
+          + (excSummary(st.key) ? '<span class="tl-exc">' + esc(excSummary(st.key)) + '</span>' : '') + '</button>'
           + '<div class="tl-tools">' + iconBtn('up', i, '上移第 ' + (i + 1) + ' 關', 'up', i === 0) + iconBtn('down', i, '下移第 ' + (i + 1) + ' 關', 'down', i === steps.length - 1)
           + iconBtn('remove', st.key, '移除第 ' + (i + 1) + ' 關', 'close') + '</div>'
           + '</div></li>').join('')
@@ -246,7 +306,13 @@
     const s = getSet(S.view);
     const idx = S.picked.indexOf(S.view);
     const r = item.rule;
-    const total = item.people.length;
+    // 依申請人決定的來源：設定時不知道申請人，只顯示規則，不列出人名
+    const tHit = findIn(M.categories, targetKey(S.view));
+    const dyn = !!(tHit && tHit.item.example);
+    const res = resolveStep(S.view);
+    const total = res.signers.length;
+    const sup = isSup(S.view);
+    const cov = M.coverage(targetKey(S.view), s);
     const modes = [{ v: 'any', t: '任一人簽核', hint: '一人同意即通過' }, item.seq ? { v: 'seq', t: '依序簽核', hint: '由下而上逐級' } : { v: 'all', t: '全部簽核', hint: '所有人都需同意' }];
 
     const rule = r ? '<div class="block"><div class="block-head"><h3>觸發條件</h3>'
@@ -256,9 +322,14 @@
       + '<div class="rule-then">時，由 <strong>' + esc(r.then) + '</strong> 簽核</div></div>'
       + '<p class="muted sm">' + (r.otherwise === 'direct' ? '不符合條件時改由直屬主管簽核' : '不符合條件時自動略過此關卡') + '</p></div>' : '';
 
-    const people = total
-      ? '<ul class="people-list">' + item.people.map((m) => '<li><span class="avatar sm">' + initial(m.name) + '</span><span class="opt-text"><span>' + esc(m.name) + '</span><span class="opt-sub">' + esc(m.title) + '</span></span></li>').join('') + '</ul>'
-      : '<p class="muted">目前沒有符合的人員，請確認組織資料。</p>';
+    const people = dyn ? '' : ((total
+      ? '<ul class="people-list">' + res.signers.map((m) => '<li><span class="avatar sm">' + initial(m.name) + '</span><span class="opt-text"><span>' + esc(m.name)
+        + (m.role === '副主管' ? ' ' + tag('副主管') : '') + '</span><span class="opt-sub">' + esc(m.title) + '</span>'
+        + (m.note ? '<span class="exc-line">' + esc(m.note) + '</span>' : '') + '</span></li>').join('') + '</ul>'
+      : '')
+      + (res.skip || res.block ? '<div class="exc-box warn">' + svg(ICON.alert, 16, { sw: 2 }) + '<span>' + esc(res.reason) + '</span></div>' : '')
+      + (res.notes.length && !res.skip && !res.block ? '<ul class="exc-notes">' + res.notes.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul>' : '')
+      + (!total && !res.skip && !res.block ? '<p class="muted">目前沒有符合的人員，請確認組織資料。</p>' : ''));
 
     const check = (k, label) => '<label class="check-row"><input type="checkbox" data-change="perm" data-arg="' + k + '"' + (s[k] ? ' checked' : '') + '><span>' + label + '</span></label>';
 
@@ -267,13 +338,28 @@
       + '<div class="drawer-head"><div class="titles"><div class="row">' + tag(cat.name) + (idx >= 0 ? '<span class="muted sm">第 ' + (idx + 1) + ' 關</span>' : '') + '</div>'
       + '<h2>' + esc(item.label) + '</h2><p class="muted">' + esc(item.sub) + '</p></div>' + iconBtn('closeView', '', '關閉', 'close') + '</div>'
       + '<div class="drawer-body">' + rule
-      + '<div class="block"><div class="block-head"><div class="row"><h3>簽核人員</h3><span class="muted sm">' + esc(item.example ? '以申請人' + M.applicant.name + '（' + M.applicant.title + '）為例' : '共 ' + total + ' 位') + '</span></div>'
+      + (sup ? '<div class="block"><h3>簽核對象</h3><div class="row wrap">'
+        + '<label class="check-row"><input type="checkbox" data-change="who" data-arg="mgr"' + (s.who.mgr ? ' checked' : '') + '><span>主管</span></label>'
+        + '<label class="check-row"><input type="checkbox" data-change="who" data-arg="deputy"' + (s.who.deputy ? ' checked' : '') + '><span>副主管</span></label></div>'
+        + '<span class="muted sm">至少勾選一項。兩者都勾時，同一層依副主管 → 主管順序簽核；只勾副主管但該層沒有副主管時，改由同層主管簽。</span>'
+        + (S.whoErr ? '<span class="error" role="alert">主管、副主管至少要勾選一項</span>' : '') + '</div>' : '')
+      // 依申請人決定的來源不顯示「簽核人員」：設定時不知道申請人，規則寫在規格文件
+      + (dyn ? '' : '<div class="block"><div class="block-head"><div class="row"><h3>簽核人員</h3><span class="muted sm">' + esc('共 ' + total + ' 位' + (res.excluded ? '（已排除不在職 ' + res.excluded + ' 位）' : '')) + '</span></div>'
       + (DIR[S.view.split(':')[0]] ? '<button class="btn btn-outline sm" data-act="editDir" data-arg="' + esc(S.view) + '">' + svg(ICON.pencil, 14, { sw: 2 }) + '<span>編輯' + DIR[S.view.split(':')[0]].noun + '</span></button>' : '')
-      + '</div>' + people + '</div>'
+      + '</div>' + people + '</div>')
       + '<div class="block"><h3>簽核方式</h3><div class="seg cols-2">' + seg(modes, s.mode, 'mode', true) + '</div></div>'
       + '<div class="block"><h3>簽核期限</h3><div class="seg cols-4">' + seg([{ v: 'none', t: '不限' }, { v: '24', t: '24 小時' }, { v: '48', t: '48 小時' }, { v: '72', t: '72 小時' }], s.timeout, 'timeout') + '</div>'
       + (s.timeout !== 'none' ? '<span class="muted sm">逾期未簽時</span><div class="seg cols-3">' + seg([{ v: 'remind', t: '再次提醒' }, { v: 'pass', t: '自動同意' }, { v: 'up', t: '轉呈上一層' }], s.overdue, 'overdue') + '</div>' : '') + '</div>'
-      + '<div class="block"><h3>其他權限</h3>' + check('allowReturn', '允許退回申請人') + check('allowAdd', '允許加簽其他人員') + check('skipSelf', '簽核人與申請人相同時自動略過') + '</div>'
+      + '<div class="block"><h3>例外處理</h3>'
+      + '<span class="muted sm">簽核人不在職時（離職、留職停薪、職位空缺；輪到這一關時判斷）</span>'
+      + '<div class="seg cols-3">' + seg(ABSENT[sup ? 'sup' : 'other'], s.absent, 'absent') + '</div>'
+      + (sup ? '' : '<span class="muted sm">多位簽核人時，部分不在職由其他在職人員簽，全部不在職才套用此設定。</span>')
+      + '<span class="muted sm">找不到簽核人時（例如組織沒有該層級）</span>'
+      + '<div class="seg cols-3">' + seg(NOTFOUND, s.notfound, 'notfound') + '</div>'
+      + (cov ? '<div class="exc-box">' + svg(ICON.alert, 16, { sw: 2 }) + '<span>' + cov.count + ' 位員工（' + esc(cov.depts.join('、')) + '）會找不到簽核人，將依此設定處理。</span></div>' : '')
+      + check('dedupe', '簽核人重複時自動略過（前面關卡已簽過的人不再簽）')
+      + check('skipSelf', '簽核人與申請人相同時自動略過') + '</div>'
+      + '<div class="block"><h3>其他權限</h3>' + check('allowReturn', '允許退回申請人') + check('allowAdd', '允許加簽其他人員') + '</div>'
       + '</div><div class="drawer-foot">'
       + (idx >= 0
         ? '<button class="btn btn-danger" data-act="pickAndClose">移除此關卡</button><button class="btn btn-primary" data-act="closeView">完成</button>'
@@ -437,20 +523,31 @@
     { v: 'progress', t: '簽核中', d: '部分關卡已核准', badge: ['簽核中', 'info'] },
     { v: 'done', t: '簽核完成', d: '所有關卡已核准', badge: ['已核准', 'ok'] }
   ];
-  const STATUS_TEXT = { done: '已核准', current: '簽核中', waiting: '未簽核' };
+  const STATUS_TEXT = { done: '已核准', current: '簽核中', waiting: '未簽核', skipped: '已略過' };
+  // 自動略過的關卡不參與進度計算；其餘關卡依情境決定狀態
+  function flowStatus(steps, sc) {
+    const fr = flowResolve(steps);
+    const ord = [];
+    let k = 0;
+    fr.forEach((f, i) => { ord[i] = f.skipped ? -1 : k++; });
+    const base = scenarioStatus(sc, k);
+    return { fr, active: k, statusOf: (i) => (ord[i] < 0 ? 'skipped' : base(ord[i])) };
+  }
 
   /* ---------- 儲存後總覽 ---------- */
   function renderDone() {
     const steps = pickedSteps();
     const n = steps.length;
     const sc = S.preview;
-    const statusOf = scenarioStatus(sc, n);
+    const fs = flowStatus(steps, sc);
+    const statusOf = fs.statusOf;
+    const na = fs.active;
     let hours = 0; let unlimited = false;
     steps.forEach((st) => { const s = getSet(st.key); if (s.timeout === 'none') unlimited = true; else hours += Number(s.timeout); });
     const condCount = steps.filter((st) => st.item.rule).length;
     const doneCount = steps.filter((_, i) => statusOf(i) === 'done').length;
-    const cur = Math.min(1, n - 1);
-    const hint = { pending: '表單送出後，等待第 1 關簽核', progress: n > 1 ? '已完成前 ' + cur + ' 關，第 ' + (cur + 1) + ' 關簽核中' : '第 1 關簽核中', done: '所有關卡皆已核准，簽核完成' }[sc];
+    const cur = Math.min(1, na - 1);
+    const hint = { pending: '表單送出後，等待第 1 關簽核', progress: na > 1 ? '已完成前 ' + cur + ' 關，下一關簽核中' : '第 1 關簽核中', done: '所有關卡皆已核准，簽核完成' }[sc];
 
     // 簽核流程設定：預設顯示目前版本，可切換查看舊版本（唯讀）
     const current = S.history.find((h) => h.version === S.version);
@@ -464,7 +561,8 @@
           + (r.more ? '<span class="muted sm">另 ' + r.more + ' 人</span>' : '');
       return '<li class="setup-row"><div class="setup-step"><span class="num-badge">' + r.num + '</span><div class="titles"><strong>' + esc(r.label) + '</strong><div class="row">' + tag(r.type) + '<span class="muted sm">' + esc(r.sub) + '</span></div></div></div>'
         + '<div class="setup-col wide"><span class="muted sm">簽核人</span><div class="chips">' + chips + '</div></div>'
-        + '<div class="setup-col"><span class="muted sm">簽核方式</span><span>' + esc(r.summary) + '</span>' + (r.cond ? '<span class="cond-note">當 ' + esc(r.cond) + ' 時簽核</span>' : '') + '</div></li>';
+        + '<div class="setup-col"><span class="muted sm">簽核方式</span><span>' + esc(r.summary) + '</span>' + (r.cond ? '<span class="cond-note">當 ' + esc(r.cond) + ' 時簽核</span>' : '')
+        + (r.exc ? '<span class="exc-line">例外處理：' + esc(r.exc) + '</span>' : '') + '</div></li>';
     }).join('');
     const versionItems = S.history.slice().reverse().map((h) => {
       const on = viewing && h.version === viewing.version;
@@ -493,13 +591,16 @@
       + '<li class="st-edge"><div class="st-track"><span class="st-fill"></span><span class="st-node done">' + svg(ICON.dot, 12) + '</span>' + line(true, true) + '</div><span class="st-edge-label">申請人送出</span></li>'
       + steps.map((st, i) => {
         const status = statusOf(i);
-        const node = status === 'done' ? svg(ICON.check, 18, { sw: 2.6 }) : status === 'current' ? svg(ICON.clock, 18, { sw: 2.2 }) : '<span>' + (i + 1) + '</span>';
-        return '<li class="st-step"><div class="st-track">' + line(status !== 'waiting', status !== 'waiting')
-          + '<span class="st-node ' + status + '">' + node + '</span>' + line(status === 'done', status === 'done') + '</div>'
+        const f = fs.fr[i];
+        const passed = status === 'done' || status === 'current' || (status === 'skipped' && i > 0 && statusOf(i - 1) === 'done');
+        const node = status === 'done' ? svg(ICON.check, 18, { sw: 2.6 }) : status === 'current' ? svg(ICON.clock, 18, { sw: 2.2 }) : status === 'skipped' ? svg(ICON.swap, 16, { sw: 2.2 }) : '<span>' + (i + 1) + '</span>';
+        const names = f.list.slice(0, 2).map((m) => m.name).join('、') + (f.list.length > 2 ? ' 等 ' + f.list.length + ' 人' : '');
+        return '<li class="st-step"><div class="st-track">' + line(status !== 'waiting', passed)
+          + '<span class="st-node ' + status + '">' + node + '</span>' + line(status === 'done' || (status === 'skipped' && passed), status === 'done' || (status === 'skipped' && passed)) + '</div>'
           + '<div class="st-card ' + status + '"><div class="row"><span class="muted sm">第 ' + (i + 1) + ' 關</span>' + tag(st.cat.name) + '</div>'
           + '<strong class="st-label">' + esc(st.item.label) + '</strong>'
-          + '<span class="muted sm">' + esc(st.item.example ? '依申請人動態帶入' : st.item.people.slice(0, 2).map((m) => m.name).join('、') + (st.item.people.length > 2 ? ' 等 ' + st.item.people.length + ' 人' : '')) + '</span>'
-          + '<div class="st-foot ' + status + '"><span class="st-foot-dot"></span>' + (status === 'current' ? '簽核中，等待簽核人處理' : status === 'done' ? '已核准' : '尚未開始') + '</div></div></li>';
+          + '<span class="muted sm">' + esc(status === 'skipped' ? '自動略過' : names) + '</span>'
+          + '<div class="st-foot ' + status + '"><span class="st-foot-dot"></span>' + (status === 'current' ? '簽核中，等待簽核人處理' : status === 'done' ? '已核准' : status === 'skipped' ? '已略過' : '尚未開始') + '</div></div></li>';
       }).join('')
       + '<li class="st-edge"><div class="st-track">' + line(sc === 'done', sc === 'done') + '<span class="st-node ' + (sc === 'done' ? 'done' : 'waiting') + '">' + svg(ICON.flag, 18, { sw: 2.4 }) + '</span><span class="st-fill"></span></div><span class="st-edge-label">簽核完成</span></li>'
       + '</ol></div>';
@@ -513,9 +614,9 @@
       + (S.prevVersion && M.sample.inProgressCount ? '已在簽核中的 ' + M.sample.inProgressCount + ' 張仍依第 ' + S.prevVersion + ' 版流程完成。' : '') + '</span></div></div>'
       + '<div class="stats"><div class="stat"><span class="muted sm">簽核關卡</span><strong>' + n + ' 關</strong></div><div class="stat"><span class="muted sm">條件式關卡</span><strong>' + condCount + ' 關</strong></div><div class="stat"><span class="muted sm">最長簽核時間</span><strong>' + (unlimited ? '不限' : hours + ' 小時') + '</strong></div></div>'
       + '<section class="card" aria-label="簽核流程設定">' + setupHead + '<ol class="setup-list">' + setupRows + '</ol></section>'
-      + '<section class="card"><div class="card-head"><h2>簽核狀態</h2><span class="muted">切換情境，查看表單送出後各關卡的簽核進度</span></div>'
+      + '<section class="card"><div class="card-head"><h2>簽核狀態</h2><span class="muted">以範例申請單示意：' + esc(M.applicant.name) + '（' + esc(M.applicant.title) + '）的' + esc(M.formName) + '。實際簽核人、自動略過與例外說明依申請人而定，切換情境可查看各關卡進度。</span></div>'
       + '<div class="tabs-big" role="group" aria-label="簽核情境">' + SCENARIOS.map((o) => '<button class="tab-big' + (o.v === sc ? ' on' : '') + '" data-act="preview" data-arg="' + o.v + '" aria-pressed="' + (o.v === sc) + '"><span class="tab-dot ' + o.v + '"></span><span class="titles"><strong>' + o.t + '</strong><span class="muted sm">' + o.d + '</span></span></button>').join('') + '</div>'
-      + '<div class="banner ' + sc + '"><div class="row wrap"><strong>' + esc(hint) + '</strong><span class="muted">已完成 ' + doneCount + ' / ' + n + ' 關</span></div>'
+      + '<div class="banner ' + sc + '"><div class="row wrap"><strong>' + esc(hint) + '</strong><span class="muted">已完成 ' + doneCount + ' / ' + na + ' 關' + (n > na ? '（另 ' + (n - na) + ' 關自動略過）' : '') + '</span></div>'
       + '<button class="btn btn-link" data-act="openStatus">查看完整簽核畫面' + svg(ICON.chev, 16, { sw: 2 }) + '</button></div>'
       + stepper + '</section></main>';
   }
@@ -523,9 +624,10 @@
   /* ---------- 單張表單的簽核進度 ---------- */
   function renderStatus() {
     const steps = pickedSteps();
-    const n = steps.length;
     const sc = S.preview;
-    const statusOf = scenarioStatus(sc, n);
+    const fs = flowStatus(steps, sc);
+    const statusOf = fs.statusOf;
+    const n = fs.active;
     let t = 0; let lastTime = '';
     const nextTime = () => { lastTime = SAMPLE_TIMES[Math.min(t++, SAMPLE_TIMES.length - 1)]; return lastTime; };
     const SIGNER = { done: '已核准', current: '待簽核', waiting: '未開始' };
@@ -533,19 +635,25 @@
     const items = steps.map((st, i) => {
       const status = statusOf(i);
       const s = getSet(st.key);
-      const list = st.item.people.slice(0, 3);
+      const f = fs.fr[i];
+      const all = f.list;
+      const list = all.slice(0, 3);
       const multi = s.mode !== 'any' && list.length > 1;
-      let signers;
+      let signers = [];
       if (status === 'waiting') signers = list.map((m) => [m, 'waiting', '']);
       else if (status === 'done') signers = (s.mode === 'any' ? list.slice(0, 1) : list).map((m) => [m, 'done', nextTime()]);
-      else signers = list.map((m, j) => multi && j === 0 ? [m, 'done', nextTime()] : [m, 'current', '']);
+      else if (status === 'current') signers = list.map((m, j) => multi && j === 0 ? [m, 'done', nextTime()] : [m, 'current', '']);
       const limit = s.timeout === 'none' ? '不限期限' : '剩餘 ' + (Number(s.timeout) - 1) + ' 小時';
       let info = '';
       if (status === 'current') info = (multi ? '1 / ' + list.length + ' 人已簽核，' : '等待簽核，') + limit;
-      if (status === 'done' && s.mode === 'any' && st.item.people.length > 1) info = '任一人簽核，已由' + list[0].name + '完成';
-      if (st.item.people.length > list.length) info += (info ? '｜' : '') + '共 ' + st.item.people.length + ' 人，僅列出前 ' + list.length + ' 位';
-      if (!list.length) info = '目前沒有符合的簽核人員';
-      return { st, status, signers, info, i };
+      if (status === 'done' && s.mode === 'any' && all.length > 1) info = '任一人簽核，已由' + list[0].name + '完成';
+      if (all.length > list.length) info += (info ? '｜' : '') + '共 ' + all.length + ' 人，僅列出前 ' + list.length + ' 位';
+      if (status === 'skipped') info = f.reason;
+      else if (f.block) info = f.reason;
+      else if (!list.length) info = '目前沒有符合的簽核人員';
+      // 例外處理的說明（不在職、往上找、略過重複等）
+      const notes = status === 'skipped' ? [] : f.notes.concat(list.filter((m) => m.note).map((m) => m.name + '：' + m.note));
+      return { st, status, signers, info, notes, i };
     });
     const doneCount = items.filter((x) => x.status === 'done').length;
     const allDone = n > 0 && doneCount === n;
@@ -556,14 +664,15 @@
     const amount = v.amount != null ? Number(v.amount).toLocaleString('en-US') + ' 元' : '—';
 
     const timeline = items.map((x) => '<li class="tl2-step"><div class="tl2-rail"><span class="tl2-node ' + x.status + '">'
-      + (x.status === 'done' ? svg(ICON.check, 16, { sw: 2.6 }) : x.status === 'current' ? svg(ICON.clock, 16, { sw: 2.2 }) : '<span>' + (x.i + 1) + '</span>')
+      + (x.status === 'done' ? svg(ICON.check, 16, { sw: 2.6 }) : x.status === 'current' ? svg(ICON.clock, 16, { sw: 2.2 }) : x.status === 'skipped' ? svg(ICON.swap, 14, { sw: 2.2 }) : '<span>' + (x.i + 1) + '</span>')
       + '</span><span class="tl2-line' + (x.status === 'done' ? ' done' : '') + '"></span></div>'
       + '<div class="tl2-body"><div class="tl2-card ' + x.status + '"><div class="row wrap"><span class="muted sm">第 ' + (x.i + 1) + ' 關</span>' + tag(x.st.cat.name)
       + '<strong class="' + (x.status === 'waiting' ? 'muted' : '') + '">' + esc(x.st.item.label) + '</strong><span class="spill ' + x.status + '">' + STATUS_TEXT[x.status] + '</span></div>'
       + '<span class="muted sm">' + esc(summary(x.st.key)) + '</span>'
       + (x.st.item.rule ? '<span class="cond-note">符合條件：' + esc(condNote(x.st.item.rule)) + '</span>' : '')
       + '<ul class="signers">' + x.signers.map((g) => '<li><span class="avatar xs">' + initial(g[0].name) + '</span><strong>' + esc(g[0].name) + '</strong><span class="muted sm">' + esc(g[0].title) + '</span><span class="spill ' + g[1] + '">' + SIGNER[g[1]] + '</span><span class="muted sm">' + esc(g[2]) + '</span></li>').join('') + '</ul>'
-      + (x.info ? '<span class="info">' + esc(x.info) + '</span>' : '') + '</div></div></li>').join('');
+      + (x.info ? '<span class="info">' + esc(x.info) + '</span>' : '')
+      + (x.notes.length ? '<ul class="exc-notes">' + x.notes.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>' : '') + '</div></div></li>').join('');
 
     return '<header class="topbar"><div class="titles"><span class="crumb">表單簽核 / ' + esc(M.formName) + '</span><div class="row wrap"><h1>' + esc(app.name) + '的' + esc(M.formName) + '</h1><span class="spill big ' + badge[1] + '">' + badge[0] + '</span></div></div>'
       + '<button class="btn btn-outline" data-act="toOverview">' + svg(ICON.back, 16, { sw: 2 }) + '<span>返回簽核流程總覽</span></button></header>'
@@ -627,15 +736,18 @@
   }
 
   // 儲存當下的流程內容（之後組織或設定變動也不影響舊版本的紀錄）
+  // 簽核流程設定是「設定」，不依任何申請人計算：固定人員列出在職者，依申請人決定的來源只顯示「依申請人動態帶入」
   function snapshotRows(steps) {
     return steps.map((st, i) => {
       const it = st.item;
+      const list = resolveStep(st.key).signers;
       return {
         num: i + 1, label: it.label, type: st.cat.name, sub: it.sub, dynamic: !!it.example,
-        people: it.people.slice(0, 3).map((m) => ({ name: m.name, title: m.title })),
-        more: Math.max(0, it.people.length - 3),
+        people: list.slice(0, 3).map((m) => ({ name: m.name, title: m.title })),
+        more: Math.max(0, list.length - 3),
         summary: summary(st.key),
-        cond: it.rule ? condNote(it.rule) : ''
+        cond: it.rule ? condNote(it.rule) : '',
+        exc: excSummary(st.key)
       };
     });
   }
@@ -679,7 +791,7 @@
   /* ---------- 事件 ---------- */
   const ACT = {
     tab: (k) => set({ tab: k, q: '' }),
-    open: (key) => set({ view: key }),
+    open: (key) => set({ view: key, whoErr: false }),
     toggle: (key) => (S.picked.includes(key) ? askRemove(key) : togglePick(key)),
     closeView: () => set({ view: null }),
     pickAndClose: () => {
@@ -722,6 +834,8 @@
     mode: (v) => setSet(S.view, { mode: v }),
     timeout: (v) => setSet(S.view, { timeout: v }),
     overdue: (v) => setSet(S.view, { overdue: v }),
+    absent: (v) => setSet(S.view, { absent: v }),
+    notfound: (v) => setSet(S.view, { notfound: v }),
     newCond: () => set({ tried: false, editor: { id: null, name: '', logic: 'and', clauses: [newClause()], then: 'org:1', otherwise: 'skip' } }),
     editCond: (id) => { const u = S.custom.find((x) => x.id === id); if (u) set({ tried: false, editor: JSON.parse(JSON.stringify(u)) }); },
     edLogic: (v) => patchEd({ logic: v }),
@@ -766,6 +880,13 @@
   };
   const CHANGE = {
     perm: (el) => setSet(S.view, { [el.dataset.arg]: el.checked }),
+    // 主管、副主管至少勾一項；取消最後一項時維持原狀並提示
+    who: (el) => {
+      const who = Object.assign({}, getSet(S.view).who, { [el.dataset.arg]: el.checked });
+      if (!who.mgr && !who.deputy) { set({ whoErr: true }); return; }
+      S.whoErr = false;
+      setSet(S.view, { who });
+    },
     edField: (el) => { const f = field(el.value); patchClause(Number(el.dataset.arg), { field: f.key, op: OPS[f.type][0], value: f.options ? f.options[0] : '' }); },
     edOp: (el) => patchClause(Number(el.dataset.arg), { op: el.value }),
     edValue: (el) => patchClause(Number(el.dataset.arg), { value: el.value }),
