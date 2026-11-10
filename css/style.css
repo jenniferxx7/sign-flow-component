@@ -313,6 +313,18 @@ body:has(.overlay, .modal-wrap) .demo-menu { display: none; }
 .version-note.old { background: var(--warn-bg); color: var(--warn); align-items: center; flex-wrap: wrap; }
 .version-note.old span { flex: 1 1 260px; }
 .tag.old { background: var(--warn-bg); color: var(--warn); }
+
+/* ---------- 例外處理 ---------- */
+.tl-exc { font-size: 12px; color: var(--warn); }
+.exc-line { display: block; font-size: 12px; line-height: 1.5; color: var(--warn); }
+.exc-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--radius); background: #F3F6FA; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.exc-box svg { flex: none; margin-top: 2px; }
+.exc-box.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); }
+.exc-notes { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--warn); }
+.st-node.skipped, .tl2-node.skipped { background: var(--surface); border: 2px dashed var(--warn-line); color: var(--warn); }
+.st-card.skipped, .tl2-card.skipped { background: var(--surface-2); border: 1px dashed var(--warn-line); }
+.st-foot.skipped { background: var(--warn-bg); color: var(--warn); }
+.spill.skipped { background: var(--warn-bg); color: var(--warn); }
 .row-head { flex-direction: row; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .ver-menu { position: relative; }
 .ver-trigger { width: 240px; height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); text-align: left; color: var(--muted); }
