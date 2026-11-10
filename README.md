@@ -48,8 +48,8 @@ js/spec-markers.js    介面上的標號，只在 spec.html 內嵌時（index.ht
 | 區塊 | 欄位 | 說明 |
 |---|---|---|
 | `grades` | 字串陣列 | 職級，由低到高排列，用於「申請人職等 以上（含）／以下（含）」條件 |
-| `departments` | `id`、`name`、`parentId`、`level`、`managerId` | 組織樹。`parentId` 為上層部門，最上層填 `null`；`level` 例如「部」「處」「公司」，「逐級簽核至處長」會用到 `處`；`managerId` 為部門主管的員編 |
-| `employees` | `id`、`name`、`deptId`、`title`、`grade`、`deputyId`（選填） | 員工。`deputyId` 為職務代理人的員編 |
+| `departments` | `id`、`name`、`parentId`、`level`、`managerId`、`deputyIds`（選填） | 組織樹。`parentId` 為上層部門，最上層填 `null`；`level` 例如「部」「處」「中心」「公司」，「逐級簽核至○級」的選項由這裡產生；`managerId` 為部門主管的員編；`deputyIds` 為副主管員編（可多位） |
+| `employees` | `id`、`name`、`deptId`、`title`、`grade`、`deputyId`（選填）、`status`（選填） | 員工。`deputyId` 為職務代理人的員編；`status` 為在職狀態：`在職`（預設）、`離職`、`留職停薪` |
 | `groups` | `id`、`name`、`memberIds` | 員工群組 |
 | `roles` | `id`、`name`、`deptId`（選填）、`memberIds` | 簽核角色，例如財務審核、法務審核 |
 | `form.name` | 字串 | 表單名稱 |
@@ -96,6 +96,11 @@ js/spec-markers.js    介面上的標號，只在 spec.html 內嵌時（index.ht
 ## 操作說明
 
 - 員工群組、簽核角色：在左側切到「員工群組」或「簽核角色」，可以「新增群組／角色」，或按每一列的筆型圖示編輯名稱、所屬部門（角色）和成員；關卡詳細面板裡也有「編輯群組／角色」。刪除前會先確認，若流程有用到，該關卡會一併移除。名單透過 `DataSource.saveDirectory()` 儲存，目前只在主控台輸出，重新整理後會回到 `data/org.js` 的內容。
+- 簽核對象與例外處理（關卡詳細面板）：
+  - 部門主管、組織層級可勾選「主管」「副主管」，兩者都勾時同一層依副主管 → 主管簽核。
+  - 每一關可設定「簽核人不在職時」「找不到簽核人時」的處理方式，以及重複簽核人、申請人本人是否自動略過。
+  - 實際簽核人由 `js/org-model.js` 的 `resolve()` 計算，完整規則寫在 `spec.html` 第十節。
+  - 範例資料刻意放入例外情境：營運中心主管與營運處副主管留職停薪、楊詩涵與蔡宗翰離職、總經理室特助找不到第 2、3 層主管。
 - 關卡順序：用「上移」「下移」按鈕，或直接拖曳關卡卡片調整。
 - 移除單一關卡、清除全部、刪除自訂條件時，都會先跳出確認對話框。
 - 流程版本：第一次儲存為第 1 版。之後修改並儲存，會另存為新版本；若有表單正在簽核，儲存前會跳出確認，沒有則直接儲存。
