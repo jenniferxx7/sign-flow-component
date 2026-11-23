@@ -81,7 +81,7 @@
       const wantMgr = s.who.mgr;
       const deps = deputiesOf(d).filter((id) => id !== appId);
       const depActive = deps.filter(isActive);
-      deps.filter((id) => !isActive(id)).forEach((id) => notes.push('副主管' + name(id) + statusOf(id) + '，略過'));
+      if (wantDep) deps.filter((id) => !isActive(id)).forEach((id) => notes.push('副主管' + name(id) + statusOf(id) + '，略過'));
       let needMgr = wantMgr;
       if (wantDep) {
         depActive.forEach((id) => list.push(person(id, { role: '副主管' })));
@@ -134,13 +134,25 @@
       return res;
     }
 
-    // 逐級簽核：從直屬主管所在部門依序簽到指定層級（toLevel 為空表示簽到最高層）
-    function resolveChain(appId, toLevel, s) {
+    // 逐級主管：從第 start 階主管開始，依 mode 決定結束
+    //   to：到指定層級（to 為空＝最高主管）結束；count：向上共簽 n 階；cap：最多簽 n 階，遇到指定層級提早結束
+    function resolveChain(appId, spec, s) {
       const res = { signers: [], notes: [], skip: false, block: false, reason: '' };
       const units = supervisorUnits(appId);
-      const idx = toLevel ? units.findIndex((d) => d.level === toLevel) : units.length - 1;
-      if (idx < 0) return notFound(res, '申請人往上的組織沒有「' + toLevel + '」層級', s);
-      for (let i = 0; i <= idx; i++) {
+      const from = (spec.start || 1) - 1;
+      if (from >= units.length) return notFound(res, '申請人往上沒有第 ' + (from + 1) + ' 階主管', s);
+      let idx;
+      if (spec.mode === 'count') {
+        idx = from + (spec.n || 1) - 1;
+        if (idx >= units.length) { idx = units.length - 1; res.notes.push('申請人往上只有 ' + units.length + ' 階，簽到最高主管為止'); }
+      } else if (spec.mode === 'cap') {
+        idx = Math.min(from + (spec.n || 1) - 1, units.length - 1);
+        for (let i = from; i <= idx; i++) { if (units[i].level === spec.to) { idx = i; break; } }
+      } else {
+        idx = spec.to ? units.findIndex((d, i) => i >= from && d.level === spec.to) : units.length - 1;
+        if (idx < 0) return notFound(res, '申請人往上的組織沒有「' + spec.to + '」層級', s);
+      }
+      for (let i = from; i <= idx; i++) {
         const d = units[i];
         const u = unitSigners(d, s, appId);
         res.notes.push(...u.notes);
@@ -207,17 +219,53 @@
     const sampleValues = sample.values || {};
     const tagOf = (id) => (isActive(id) ? '' : '（' + statusOf(id) + '）');
 
+    // 可選的員工：已離職不列入；留職停薪可能復職，保留並標示（指定同仁、群組／角色成員挑選共用）
+    const empItems = raw.employees.filter((e) => statusOf(e.id) !== '離職').map((e) => {
+      const d = depts.get(e.deptId);
+      return { id: e.id, label: e.name, dept: d ? d.name : '', title: e.title, sub: [d && d.name, e.title, e.id].filter(Boolean).join('｜') + tagOf(e.id) };
+    });
+    // 組織層級由上往下，例如 公司 → 中心 → 處 → 部
+    const levelsDown = (topDept && topDept.level ? [topDept.level] : []).concat(levels.slice().reverse());
+    const lvName = (lv) => (topDept && lv === topDept.level ? '最高' : lv);
+
+    // 逐級主管的設定字串：起始階|結束方式|階數|層級，例如 1|to|處、2|count|3、1|cap|4|處
+    const parseChain = (id) => { const [start, mode, a, b] = id.split('|'); return mode === 'count' ? { start: +start, mode, n: +a } : mode === 'cap' ? { start: +start, mode, n: +a, to: b } : { start: +start, mode: 'to', to: a || null }; };
+    function chainText(c) {
+      const head = '從第 ' + c.start + ' 階主管開始，';
+      if (c.mode === 'count') return head + '向上共簽核 ' + c.n + ' 階結束';
+      if (c.mode === 'cap') return head + '向上最多共簽核 ' + c.n + ' 階，如遇到' + c.to + '則提早結束';
+      return head + '到' + (c.to ? lvName(c.to) + (c.to === (topDept || {}).level ? '' : '級') : '最高') + '主管結束';
+    }
+
     // rs：解析方式，供 resolve 使用
     const nth = (n) => ({ type: 'nth', n });
     const categories = {
-      emp: {
-        name: '指定員工', desc: '直接指定一位或多位員工作為簽核人', placeholder: '搜尋姓名、員編或部門', mode: 'all',
-        // 已離職的員工不列入選項；留職停薪可能復職，保留並標示
-        items: raw.employees.filter((e) => statusOf(e.id) !== '離職').map((e) => {
-          const d = depts.get(e.deptId);
-          return { id: e.id, label: e.name, sub: [d && d.name, e.title, e.id].filter(Boolean).join('｜') + tagOf(e.id), rs: { type: 'persons', ids: [e.id], what: e.name } };
-        })
+      // ---------- 104 已開發的 5 個簽核設定（左側前 5 個，以設定表單加入） ----------
+      self: {
+        name: '申請人本人', desc: '由送出表單的申請人本人簽核，例如自評', mode: 'all', form: true, core: true, items: [],
+        make: () => ({ id: 'app', label: '申請人本人', sub: '送出表單的員工', example: true, rs: { type: 'persons', ids: [applicant.id], what: '申請人' } })
       },
+      single: {
+        name: '單一主管', desc: '只簽指定的第 N 階主管', mode: 'all', form: true, core: true, sup: true, items: [],
+        make: (id) => ({ id, label: '第 ' + id + ' 階主管', sub: '只簽申請人往上第 ' + id + ' 階主管', example: true, rs: nth(+id) })
+      },
+      pick: {
+        name: '指定同仁', desc: '由指定的特定同仁簽核（一位）', mode: 'all', form: true, core: true, items: [],
+        make: (id) => { const e = empItems.find((x) => x.id === id); return e ? { id, label: e.label, sub: e.sub, rs: { type: 'persons', ids: [id], what: e.label } } : null; }
+      },
+      orglv: {
+        name: '組織層級', desc: '直接指定由哪一個組織層級的最高主管簽核', mode: 'all', form: true, core: true, sup: true, items: [],
+        make: (lv) => (levelsDown.includes(lv) ? { id: lv, label: lvName(lv) === '最高' ? '最高主管核決' : lv + '級最高主管核決', sub: '由申請人所屬' + lv + '的最高主管執行部門核決', example: true, rs: { type: 'level', lv } } : null)
+      },
+      chain: {
+        name: '逐級主管', desc: '指定從第幾階主管開始，以及在哪裡結束', mode: 'all', form: true, core: true, sup: true, items: [],
+        make: (id) => {
+          const c = parseChain(id);
+          const end = c.mode === 'count' ? '共 ' + c.n + ' 階' : c.mode === 'cap' ? '最多 ' + c.n + ' 階，遇' + c.to + '提早結束' : '至' + (c.to && c.to !== (topDept || {}).level ? c.to + '級' : '最高') + '主管';
+          return { id, label: '第 ' + c.start + ' 階起逐級簽核，' + end, sub: chainText(c), example: true, seq: true, rs: Object.assign({ type: 'chain' }, c) };
+        }
+      },
+      // ---------- 其他簽核來源 ----------
       group: {
         name: '員工群組', desc: '由群組內成員簽核，可設定任一人或全部', placeholder: '搜尋群組名稱', mode: 'any',
         items: (raw.groups || []).map((g) => ({ id: g.id, label: g.name, sub: g.memberIds.length + ' 位成員', rs: { type: 'persons', ids: g.memberIds, what: '群組' } }))
@@ -239,18 +287,6 @@
           return { id: 'dept:' + d.id, label: d.name + '主管', sub: '指定部門｜目前：' + (m ? m.name + tagOf(m.id) : '未設定'), rs: { type: 'unit', dept: d.id } };
         }))
       },
-      org: {
-        name: '組織層級', desc: '依申請人在組織架構中的位置，逐層往上簽核', placeholder: '搜尋層級', mode: 'all', sup: true,
-        items: [
-          { id: '1', label: '直屬主管', sub: '依申請人往上第 1 層', howto: '申請人的直屬主管（往上第 1 層部門的主管）', example: true, rs: nth(1) },
-          { id: '2', label: '第 2 層主管', sub: '依申請人往上第 2 層', howto: '申請人往上第 2 層部門的主管', example: true, rs: nth(2) },
-          { id: '3', label: '第 3 層主管', sub: '依申請人往上第 3 層', howto: '申請人往上第 3 層部門的主管', example: true, rs: nth(3) }
-        ].concat(levels.map((lv) => ({
-          id: 'lv:' + lv, label: '逐級簽核至' + lv + '級', sub: '自直屬主管起，依序簽至' + lv + '級主管', howto: '自申請人的直屬主管起，依序簽到' + lv + '級主管', example: true, seq: true, rs: { type: 'chain', to: lv }
-        }))).concat([
-          { id: 'to-top', label: '逐級簽核至' + (top ? top.title : '最高主管'), sub: '自直屬主管起，依序簽至最高主管', howto: '自申請人的直屬主管起，依序簽到最高主管', example: true, seq: true, rs: { type: 'chain', to: null } }
-        ])
-      },
       role: {
         name: '簽核角色', desc: '指定具備特定職能角色的人員', placeholder: '搜尋角色', mode: 'any',
         items: (raw.roles || []).map((r) => {
@@ -261,7 +297,6 @@
       rel: {
         name: '表單關係人', desc: '依表單內容帶出相關人員', placeholder: '搜尋關係人', mode: 'all',
         items: [
-          { id: 'self', label: '申請人本人', sub: '送出表單的員工', howto: '送出表單的員工本人', example: true, rs: { type: 'persons', ids: [applicant.id], what: '申請人' } },
           { id: 'deputy', label: '申請人代理人', sub: '表單上填寫的職務代理人', howto: '申請人在表單上填寫的職務代理人', example: true, rs: { type: 'persons', ids: applicant.deputyId ? [applicant.deputyId] : [], what: '申請人代理人' } }
         ].concat(personFields.map((f) => ({
           id: 'field:' + f.key, label: '欄位「' + f.label + '」', sub: '取自表單欄位', howto: '表單欄位「' + f.label + '」填入的人員', example: true,
@@ -277,8 +312,12 @@
     function run(rs, s, appId) {
       if (!rs) return { signers: [], notes: [], skip: false, block: false, reason: '' };
       if (rs.type === 'persons') return resolvePersons(rs.ids, s, rs.what);
-      if (rs.type === 'chain') return resolveChain(appId, rs.to, s);
-      if (rs.type === 'nth') return resolveUnit(supervisorUnits(appId)[rs.n - 1], s, appId, '申請人往上沒有第 ' + rs.n + ' 層主管');
+      if (rs.type === 'chain') return resolveChain(appId, rs, s);
+      if (rs.type === 'nth') return resolveUnit(supervisorUnits(appId)[rs.n - 1], s, appId, '申請人往上沒有第 ' + rs.n + ' 階主管');
+      if (rs.type === 'level') {
+        const d = deptChain(appId).find((x) => x.level === rs.lv);
+        return resolveUnit(d, s, appId, '申請人往上的組織沒有「' + rs.lv + '」層級');
+      }
       const ad = depts.get((emps.get(appId) || {}).deptId);
       if (rs.which === 'self') return resolveUnit(ad && ad.managerId === appId ? parentOf(ad) : ad, s, appId, '申請人沒有上一層部門');
       if (rs.which === 'parent') return resolveUnit(parentOf(ad && ad.managerId === appId ? parentOf(ad) : ad), s, appId, '申請人沒有上一層部門');
@@ -288,7 +327,8 @@
     function findItem(key) {
       const i = key.indexOf(':');
       const cat = categories[key.slice(0, i)];
-      const item = cat ? cat.items.find((it) => it.id === key.slice(i + 1)) : null;
+      const id = key.slice(i + 1);
+      const item = !cat ? null : cat.make ? cat.make(id) : cat.items.find((it) => it.id === id);
       return item ? { cat, item } : null;
     }
 
@@ -303,7 +343,7 @@
     // 有多少員工會遇到「找不到簽核人」（設定畫面提醒用）
     function coverage(key, settings) {
       const hit = findItem(key);
-      if (!hit || !hit.item.example || !(hit.item.rs.type === 'nth' || hit.item.rs.type === 'chain' || hit.item.rs.type === 'unit')) return null;
+      if (!hit || !hit.item.example || !['nth', 'chain', 'unit', 'level'].includes(hit.item.rs.type)) return null;
       const s = Object.assign({}, DEFAULT, settings || {}, { notfound: 'top' });
       const miss = raw.employees.filter((e) => run(hit.item.rs, s, e.id).notFound);
       return miss.length ? { count: miss.length, depts: [...new Set(miss.map((e) => (depts.get(e.deptId) || {}).name))] } : null;
@@ -333,6 +373,9 @@
       presets,
       categories,
       levels,
+      levelsDown,
+      empItems,
+      findItem,
       resolve,
       coverage,
       applicant: person(applicant.id),
