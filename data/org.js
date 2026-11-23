@@ -76,7 +76,7 @@ window.ORG_DATA = {
     ],
     "presetConditions": [
       { "id": "c1", "name": "金額超過 50,000", "logic": "and", "clauses": [{ "field": "amount", "op": ">", "value": "50000" }], "then": "head:dept:FIN", "otherwise": "skip" },
-      { "id": "c2", "name": "職等協理以上", "logic": "and", "clauses": [{ "field": "grade", "op": "以上（含）", "value": "協理" }], "then": "org:to-top", "otherwise": "skip" },
+      { "id": "c2", "name": "職等協理以上", "logic": "and", "clauses": [{ "field": "grade", "op": "以上（含）", "value": "協理" }], "then": "chain:1|to|公司", "otherwise": "skip" },
       { "id": "c3", "name": "交際費用", "logic": "and", "clauses": [{ "field": "category", "op": "等於", "value": "交際" }], "then": "head:parent", "otherwise": "skip" },
       { "id": "c4", "name": "專案費用", "logic": "and", "clauses": [{ "field": "project", "op": "不為空" }], "then": "rel:field:projectOwner", "otherwise": "skip" }
     ]
