@@ -36,7 +36,14 @@
     swap: '<path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path>',
     dot: '<circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"></circle>'
   };
-  const NAV = ['emp', 'group', 'dept', 'head', 'org', 'role', 'rel', 'cond'];
+  ICON.self = ICON.head;
+  ICON.single = '<circle cx="12" cy="6" r="3"></circle><path d="M12 9v5"></path><rect x="7" y="14" width="10" height="7" rx="1.5"></rect>';
+  ICON.pick = ICON.emp;
+  ICON.orglv = ICON.org;
+  ICON.chain = '<circle cx="12" cy="4.5" r="2.5"></circle><circle cx="12" cy="12" r="2.5"></circle><circle cx="12" cy="19.5" r="2.5"></circle><path d="M12 7v2.5"></path><path d="M12 14.5V17"></path>';
+  // 前 5 個為 104 已開發的簽核設定（特殊底色），其後為其他簽核來源
+  const NAV = ['self', 'single', 'pick', 'orglv', 'chain', 'group', 'dept', 'head', 'role', 'rel', 'cond'];
+  const STEPS_MAX = 5; // 階數下拉的上限
   const OPS = { num: ['>', '≥', '<', '≤', '=', '≠'], enum: ['等於', '不等於'], rank: ['以上（含）', '以下（含）', '等於', '不等於'], text: ['包含', '等於', '為空', '不為空'] };
   const MODE_TEXT = { any: '任一人簽核', all: '全部簽核', seq: '依序簽核' };
   // 可在頁面上維護名單的簽核來源
@@ -49,7 +56,9 @@
   /* ---------- 狀態 ---------- */
   let M = null;
   const S = {
-    tab: 'emp', q: '', view: null, editor: null, tried: false,
+    tab: 'self', q: '', view: null, editor: null, tried: false,
+    // 104 簽核設定的表單值
+    form: { single: '1', orglv: '', pickId: '', pickQ: '', pickAdv: false, pickDept: '', pickTitle: '', chStart: '1', chMode: 'count', chN: '1', chTo: '', chCapN: '1', chCapTo: '', tried: false },
     custom: [], picked: [], settings: {},
     screen: 'edit', preview: 'pending', saved: false,
     confirm: null, saving: false, saveError: '',
@@ -76,7 +85,8 @@
     const i = key.indexOf(':');
     const cat = categories[key.slice(0, i)];
     if (!cat) return null;
-    const item = cat.items.find((it) => it.id === key.slice(i + 1));
+    const id = key.slice(i + 1);
+    const item = cat.make ? cat.make(id) : cat.items.find((it) => it.id === id);
     return item ? { cat, item } : null;
   }
 
@@ -187,18 +197,92 @@
   const tag = (t) => '<span class="tag">' + esc(t) + '</span>';
   const iconBtn = (act, arg, label, icon, disabled) => '<button class="icon-btn" data-act="' + act + '" data-arg="' + esc(arg) + '" aria-label="' + esc(label) + '"' + (disabled ? ' disabled' : '') + '>' + svg(ICON[icon], 16, { sw: 2 }) + '</button>';
 
+  /* ---------- 104 簽核設定表單（申請人本人、單一主管、指定同仁、組織層級、逐級主管） ---------- */
+  const numOpts = (cur) => Array.from({ length: STEPS_MAX }, (_, i) => String(i + 1)).map((v) => '<option value="' + v + '"' + (v === String(cur) ? ' selected' : '') + '>' + v + '</option>').join('');
+  const lvOpts = (cur) => '<option value="">請選擇</option>' + M.levelsDown.map((lv, i) => '<option value="' + esc(lv) + '"' + (lv === cur ? ' selected' : '') + '>' + esc(i === 0 ? lv + '（最高主管）' : lv) + '</option>').join('');
+
+  // 依表單目前的值組出關卡代碼；未選完時回傳空字串
+  function formKey(tab) {
+    const f = S.form;
+    if (tab === 'self') return 'self:app';
+    if (tab === 'single') return 'single:' + f.single;
+    if (tab === 'pick') return f.pickId ? 'pick:' + f.pickId : '';
+    if (tab === 'orglv') return f.orglv ? 'orglv:' + f.orglv : '';
+    if (tab === 'chain') {
+      if (f.chMode === 'count') return 'chain:' + f.chStart + '|count|' + f.chN;
+      if (f.chMode === 'to') return f.chTo ? 'chain:' + f.chStart + '|to|' + f.chTo : '';
+      return f.chCapTo ? 'chain:' + f.chStart + '|cap|' + f.chCapN + '|' + f.chCapTo : '';
+    }
+    return '';
+  }
+  const FORM_MISSING = { pick: '請指派一位執行人', orglv: '請選擇組織層級', chain: '請選擇結束的層級' };
+
+  function renderForm(tab) {
+    const f = S.form;
+    const req = '<span class="req" aria-hidden="true">*</span>';
+    let body = '';
+    if (tab === 'self') {
+      body = '<div class="form-row"><span class="form-label">執行人' + req + '</span><div class="form-static">申請人本人</div></div>';
+    } else if (tab === 'single') {
+      body = '<div class="form-row"><span class="form-label" id="fl-single">執行人' + req + '</span><div class="row">'
+        + '<select class="select num" aria-labelledby="fl-single" data-change="fSingle">' + numOpts(f.single) + '</select><span>階主管</span></div>'
+        + '<span class="muted sm">只簽申請人往上第 N 階主管，第 1 階即直屬主管。</span></div>';
+    } else if (tab === 'pick') {
+      const term = f.pickQ.trim().toLowerCase();
+      const list = M.empItems.filter((e) => (!term || (e.label + e.id).toLowerCase().includes(term)) && (!f.pickDept || e.dept === f.pickDept) && (!f.pickTitle || e.title === f.pickTitle));
+      const depts = [...new Set(M.empItems.map((e) => e.dept).filter(Boolean))];
+      const titles = [...new Set(M.empItems.filter((e) => !f.pickDept || e.dept === f.pickDept).map((e) => e.title))];
+      const chosen = M.empItems.find((e) => e.id === f.pickId);
+      body = '<div class="form-row"><span class="form-label">執行人' + req + '</span>'
+        + '<div class="form-static">' + (chosen ? esc(chosen.label) + '<span class="muted sm">　' + esc(chosen.sub) + '</span>' : '<span class="muted">指派一位執行人</span>') + '</div>'
+        + '<div class="pick-box"><div class="row"><label class="search grow">' + svg(ICON.search, 18, { sw: 2 }) + '<span class="sr">搜尋同仁</span><input type="search" data-input="pickQ" data-key="pick-q" value="' + esc(f.pickQ) + '" placeholder="同仁姓名或員編"></label>'
+        + '<button class="btn btn-outline sm" data-act="pickAdv" aria-expanded="' + f.pickAdv + '">進階篩選</button></div>'
+        + (f.pickAdv ? '<div class="row wrap"><label class="row grow"><span class="muted sm">部門</span><select class="select grow" data-change="pickDept"><option value="">全部部門</option>' + depts.map((d) => '<option' + (d === f.pickDept ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></label>'
+          + '<label class="row grow"><span class="muted sm">職稱</span><select class="select grow" data-change="pickTitle"><option value="">全部職稱</option>' + titles.map((t) => '<option' + (t === f.pickTitle ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select></label></div>' : '')
+        + '<ul class="pick-radio" role="radiogroup" aria-label="同仁">' + (list.slice(0, 50).map((e) => '<li class="' + (e.id === f.pickId ? 'on' : '') + '"><label><input type="radio" name="pick-one" data-change="pickId" value="' + esc(e.id) + '"' + (e.id === f.pickId ? ' checked' : '') + '>'
+          + '<span class="grow">' + esc(e.label) + '</span><span class="muted sm">' + esc(e.dept) + '</span></label></li>').join('') || '<li class="muted sm">找不到符合的同仁</li>') + '</ul>'
+        + (list.length > 50 ? '<span class="muted sm">共 ' + list.length + ' 位，僅列出前 50 位，請輸入關鍵字或篩選</span>' : '') + '</div>'
+        + '<span class="muted sm">只能指派一位；已離職同仁不列入。</span></div>';
+    } else if (tab === 'orglv') {
+      body = '<div class="form-row"><span class="form-label" id="fl-orglv">執行人' + req + '</span><div class="row wrap"><span>由</span>'
+        + '<select class="select' + (f.tried && !f.orglv ? ' bad' : '') + '" aria-labelledby="fl-orglv" data-change="fOrglv">' + lvOpts(f.orglv) + '</select><span>最高主管執行部門核決</span></div>'
+        + '<span class="muted sm">※ 由申請人所屬該層級單位的最高主管簽核。</span></div>';
+    } else if (tab === 'chain') {
+      const radio = (v, inner) => '<label class="chain-opt' + (f.chMode === v ? ' on' : '') + '"><input type="radio" name="ch-mode" data-change="chMode" value="' + v + '"' + (f.chMode === v ? ' checked' : '') + '><span class="row wrap">' + inner + '</span></label>';
+      const dis = (v) => (f.chMode === v ? '' : ' disabled');
+      body = '<div class="form-row"><span class="form-label" id="fl-chain">執行人' + req + '</span><div class="row"><span>從</span>'
+        + '<select class="select num" aria-labelledby="fl-chain" data-change="chStart">' + numOpts(f.chStart) + '</select><span>階主管開始</span></div>'
+        + '<div class="chain-opts">'
+        + radio('count', '<span>向上共簽核</span><select class="select num" aria-label="共簽核階數" data-change="chN"' + dis('count') + '>' + numOpts(f.chN) + '</select><span>階結束</span>')
+        + radio('to', '<span>到</span><select class="select' + (f.tried && f.chMode === 'to' && !f.chTo ? ' bad' : '') + '" aria-label="結束層級" data-change="chTo"' + dis('to') + '>' + lvOpts(f.chTo) + '</select><span>最高主管結束</span>')
+        + radio('cap', '<span>向上最多共簽核</span><select class="select num" aria-label="最多簽核階數" data-change="chCapN"' + dis('cap') + '>' + numOpts(f.chCapN) + '</select><span>階，如遇到</span>'
+          + '<select class="select' + (f.tried && f.chMode === 'cap' && !f.chCapTo ? ' bad' : '') + '" aria-label="提早結束層級" data-change="chCapTo"' + dis('cap') + '>' + lvOpts(f.chCapTo) + '</select><span>則提早結束</span>')
+        + '</div></div>';
+    }
+    const key = formKey(tab);
+    const hit = key ? find(key) : null;
+    const idx = key ? S.picked.indexOf(key) : -1;
+    return '<div class="form-src">' + body
+      + (hit ? '<div class="form-preview"><span class="muted sm">將加入</span><strong>' + esc(hit.item.label) + '</strong><span class="muted sm">' + esc(hit.item.sub) + '</span></div>' : '')
+      + (f.tried && !key ? '<span class="error" role="alert">' + FORM_MISSING[tab] + '</span>' : '')
+      + '<div class="row">' + (idx >= 0
+        ? '<button class="btn btn-primary" disabled>已加入流程（第 ' + (idx + 1) + ' 關）</button><button class="btn btn-outline" data-act="open" data-arg="' + esc(key) + '">查看設定</button>'
+        : '<button class="btn btn-primary" data-act="formAdd">' + svg(ICON.plus, 16, { sw: 2.2 }) + '<span>加入流程</span></button>')
+      + '</div></div>';
+  }
+
   /* ---------- 設定畫面 ---------- */
   function renderEdit() {
     const C = cats();
     const cur = C[S.tab];
     const steps = pickedSteps();
     const empty = steps.length === 0;
-    const term = S.q.trim().toLowerCase();
-    const matched = cur.items.filter((it) => !term || (it.label + it.sub).toLowerCase().includes(term));
+    const term = cur.form ? '' : S.q.trim().toLowerCase();
+    const matched = (cur.form ? [] : cur.items).filter((it) => !term || (it.label + it.sub).toLowerCase().includes(term));
     const LIMIT = 100;
     const options = matched.slice(0, LIMIT);
 
-    const nav = NAV.map((k) => '<button class="nav-btn' + (k === S.tab ? ' on' : '') + '" data-act="tab" data-arg="' + k + '" aria-pressed="' + (k === S.tab) + '">'
+    const nav = NAV.map((k) => '<button class="nav-btn' + (C[k].core ? ' core' : '') + (k === S.tab ? ' on' : '') + '" data-act="tab" data-arg="' + k + '" aria-pressed="' + (k === S.tab) + '">'
       + svg(ICON[k], 20) + '<span>' + esc(C[k].name) + '</span></button>').join('');
 
     const rows = options.map((it) => {
@@ -216,7 +300,7 @@
     }).join('') + (matched.length > LIMIT ? '<p class="muted center">共 ' + matched.length + ' 筆，僅顯示前 ' + LIMIT + ' 筆，請輸入關鍵字縮小範圍</p>' : '')
       || '<p class="muted center">' + (S.q.trim() ? '找不到符合「' + esc(S.q) + '」的項目' : '目前沒有任何項目') + '</p>';
 
-    const quick = ['org:1', 'head:self', 'role:fin', 'role:hr'].map((k) => find(k)).map((h, i) => h ? '<button class="chip-btn" data-act="toggle" data-arg="' + ['org:1', 'head:self', 'role:fin', 'role:hr'][i] + '" aria-label="加入 ' + esc(h.item.label) + '">' + svg(ICON.plus, 14, { sw: 2.4 }) + '<span>' + esc(h.item.label) + '</span></button>' : '').join('');
+    const quick = ['single:1', 'head:self', 'role:fin', 'role:hr'].map((k) => find(k)).map((h, i) => h ? '<button class="chip-btn" data-act="toggle" data-arg="' + ['single:1', 'head:self', 'role:fin', 'role:hr'][i] + '" aria-label="加入 ' + esc(h.item.label) + '">' + svg(ICON.plus, 14, { sw: 2.4 }) + '<span>' + esc(h.item.label) + '</span></button>' : '').join('');
 
     const flow = empty
       ? '<div class="empty-box"><div class="empty-top">' + svg(ICON.plus, 28, { sw: 1.6 })
@@ -247,10 +331,12 @@
       + '<div class="layout"><nav class="nav" aria-label="簽核來源"><div class="navlist">' + nav + '</div></nav>'
       + '<div class="main">'
       + '<section class="panel"><div class="panel-head"><h2>' + esc(cur.name) + '</h2><p class="muted">' + esc(cur.desc) + '</p></div>'
-      + '<label class="search">' + svg(ICON.search, 18, { sw: 2 }) + '<span class="sr">搜尋</span><input type="search" data-input="q" data-key="q" value="' + esc(S.q) + '" placeholder="' + esc(cur.placeholder) + '"></label>'
-      + (S.tab === 'cond' ? '<button class="add-cond" data-act="newCond">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增自訂條件</span></button>' : '')
-      + (DIR[S.tab] ? '<button class="add-cond" data-act="newDir" data-arg="' + S.tab + '">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增' + DIR[S.tab].noun + '</span></button>' : '')
-      + '<div class="opt-list">' + rows + '</div></section>'
+      + (cur.form ? renderForm(S.tab)
+        : '<label class="search">' + svg(ICON.search, 18, { sw: 2 }) + '<span class="sr">搜尋</span><input type="search" data-input="q" data-key="q" value="' + esc(S.q) + '" placeholder="' + esc(cur.placeholder) + '"></label>'
+        + (S.tab === 'cond' ? '<button class="add-cond" data-act="newCond">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增自訂條件</span></button>' : '')
+        + (DIR[S.tab] ? '<button class="add-cond" data-act="newDir" data-arg="' + S.tab + '">' + svg(ICON.plus, 18, { sw: 2 }) + '<span>新增' + DIR[S.tab].noun + '</span></button>' : '')
+        + '<div class="opt-list">' + rows + '</div>')
+      + '</section>'
       + '<aside class="flow" aria-label="簽核流程"><div class="flow-head"><h2>簽核流程</h2>'
       + (empty ? '' : '<span class="muted">共 ' + steps.length + ' 關｜點選關卡查看設定</span>') + '</div>'
       + (isDirty() ? '<div class="version-note" role="status">' + svg(ICON.swap, 16, { sw: 2 }) + '<span>流程已修改，儲存後會成為<strong>第 ' + (S.version + 1) + ' 版</strong>。'
@@ -370,8 +456,16 @@
   /* ---------- 自訂條件編輯器 ---------- */
   function approverOptions(selected) {
     const C = M.categories;
-    return ['org', 'head', 'role', 'rel'].map((k) => '<optgroup label="' + esc(C[k].name) + '">'
-      + C[k].items.map((it) => { const v = k + ':' + it.id; return '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(it.label) + '</option>'; }).join('')
+    // 104 設定型來源提供常用選項，其餘來源列出清單項目
+    const formItems = {
+      single: Array.from({ length: STEPS_MAX }, (_, i) => String(i + 1)),
+      orglv: M.levelsDown.slice(),
+      chain: ['1|to|' + M.levelsDown[0]].concat(M.levelsDown.slice(1).map((lv) => '1|to|' + lv))
+    };
+    const opt = (v, label) => '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(label) + '</option>';
+    return ['single', 'orglv', 'chain', 'head', 'role', 'rel'].map((k) => '<optgroup label="' + esc(C[k].name) + '">'
+      + (formItems[k] ? formItems[k].map((id) => { const it = C[k].make(id); return it ? opt(k + ':' + id, k === 'chain' ? it.sub : it.label) : ''; }).join('')
+        : C[k].items.map((it) => opt(k + ':' + it.id, it.label)).join(''))
       + '</optgroup>').join('');
   }
   const optionList = (list, cur) => list.map((o) => '<option value="' + esc(o) + '"' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>').join('');
@@ -432,7 +526,7 @@
     const d = DIR[mb.kind];
     const catName = M.categories[mb.kind].name;
     const bad = dirProblems(mb);
-    const emps = M.categories.emp.items;
+    const emps = M.empItems;
     const byId = new Map(emps.map((e) => [e.id, e]));
     const term = mb.q.trim().toLowerCase();
     const matched = emps.filter((e) => !term || (e.label + e.sub).toLowerCase().includes(term));
@@ -474,6 +568,7 @@
   }
 
   function patchMb(p) { set({ member: Object.assign({}, S.member, p) }); }
+  function patchForm(p) { set({ form: Object.assign({}, S.form, p) }); }
 
   // 名單改變後重新整理組織模型；找不到的關卡（例如預設條件指向已刪除的角色）一併移出流程
   function applyDirectory(kind, list) {
@@ -836,7 +931,14 @@
     overdue: (v) => setSet(S.view, { overdue: v }),
     absent: (v) => setSet(S.view, { absent: v }),
     notfound: (v) => setSet(S.view, { notfound: v }),
-    newCond: () => set({ tried: false, editor: { id: null, name: '', logic: 'and', clauses: [newClause()], then: 'org:1', otherwise: 'skip' } }),
+    newCond: () => set({ tried: false, editor: { id: null, name: '', logic: 'and', clauses: [newClause()], then: 'single:1', otherwise: 'skip' } }),
+    pickAdv: () => patchForm({ pickAdv: !S.form.pickAdv, pickDept: '', pickTitle: '' }),
+    // 104 簽核設定：依表單值加入流程（最後一關）
+    formAdd: () => {
+      const key = formKey(S.tab);
+      if (!key) { patchForm({ tried: true }); return; }
+      if (!S.picked.includes(key)) set({ picked: S.picked.concat(key), saved: false, form: Object.assign({}, S.form, { tried: false }) });
+    },
     editCond: (id) => { const u = S.custom.find((x) => x.id === id); if (u) set({ tried: false, editor: JSON.parse(JSON.stringify(u)) }); },
     edLogic: (v) => patchEd({ logic: v }),
     edElse: (v) => patchEd({ otherwise: v }),
@@ -876,7 +978,8 @@
     edValue: (v, i) => patchClause(Number(i), { value: v }),
     // 名稱只在按下儲存時檢查，打字時不重繪；已顯示錯誤訊息時才重繪，讓訊息隨輸入消失
     mbName: (v) => { S.member.name = v; if (S.member.tried) render(); },
-    mbQ: (v) => patchMb({ q: v })
+    mbQ: (v) => patchMb({ q: v }),
+    pickQ: (v) => patchForm({ pickQ: v })
   };
   const CHANGE = {
     perm: (el) => setSet(S.view, { [el.dataset.arg]: el.checked }),
@@ -892,6 +995,17 @@
     edValue: (el) => patchClause(Number(el.dataset.arg), { value: el.value }),
     edThen: (el) => patchEd({ then: el.value }),
     mbDept: (el) => patchMb({ deptId: el.value }),
+    fSingle: (el) => patchForm({ single: el.value }),
+    fOrglv: (el) => patchForm({ orglv: el.value }),
+    pickDept: (el) => patchForm({ pickDept: el.value, pickTitle: '' }),
+    pickTitle: (el) => patchForm({ pickTitle: el.value }),
+    pickId: (el) => patchForm({ pickId: el.value }),
+    chStart: (el) => patchForm({ chStart: el.value }),
+    chMode: (el) => patchForm({ chMode: el.value, tried: false }),
+    chN: (el) => patchForm({ chN: el.value }),
+    chTo: (el) => patchForm({ chTo: el.value }),
+    chCapN: (el) => patchForm({ chCapN: el.value }),
+    chCapTo: (el) => patchForm({ chCapTo: el.value }),
     mbPick: (el) => {
       const id = el.dataset.arg;
       const ids = S.member.memberIds.filter((x) => x !== id);
